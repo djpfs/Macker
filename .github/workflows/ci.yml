@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
   schedule:
     - cron: '28 22 * * 1'
@@ -113,7 +113,7 @@ jobs:
     name: Publish .pkg
     runs-on: macos-15
     needs: [build-and-test, lint]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     permissions:
       contents: write
     steps:
@@ -129,9 +129,23 @@ jobs:
           set -e
           PKG="$(ls dist/Macker-*.pkg | head -n 1)"
           SHORT_SHA="${GITHUB_SHA::12}"
-          gh release create "main-${SHORT_SHA}" "$PKG" \
-            --repo "${{ github.repository }}" \
-            --target "$GITHUB_SHA" \
-            --title "Macker main-${SHORT_SHA}" \
-            --notes "Build de \`main\` @ \`${SHORT_SHA}\` (run #${GITHUB_RUN_NUMBER})" \
-            --prerelease
+          if [ "${GITHUB_REF_NAME}" = "main" ]; then
+            # Stable release channel
+            TAG="v1.0.0.${GITHUB_RUN_NUMBER}"
+            PRERELEASE=""
+          else
+            # Non-stable (pre-release) channel
+            TAG="develop-${SHORT_SHA}"
+            PRERELEASE="--prerelease"
+          fi
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            # Release already exists (workflow re-run): just refresh the asset
+            gh release upload "$TAG" "$PKG" --repo "${{ github.repository }}" --clobber
+          else
+            gh release create "$TAG" "$PKG" \
+              --repo "${{ github.repository }}" \
+              --target "$GITHUB_SHA" \
+              --title "Macker ${TAG}" \
+              --notes "Build de \`${GITHUB_REF_NAME}\` @ \`${SHORT_SHA}\` (run #${GITHUB_RUN_NUMBER})" \
+              $PRERELEASE
+          fi
