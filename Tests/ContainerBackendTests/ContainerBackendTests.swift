@@ -64,7 +64,7 @@ final class XPCMessageTests: XCTestCase {
         let message = XPCMessage(route: .networkCreate)
         let config = NetworkConfiguration(name: "bridge", plugin: "vmnet")
         try message.setJSON(config, key: .networkConfig)
-        let decoded: NetworkConfiguration = try message.decodeJSON(.networkConfig)
+        let decoded: NetworkConfiguration = try message.decodeJSON(NetworkConfiguration.self, key: .networkConfig)
         XCTAssertEqual(decoded.name, "bridge")
         XCTAssertEqual(decoded.plugin, "vmnet")
     }
