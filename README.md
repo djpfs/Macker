@@ -30,6 +30,7 @@ reload for virtiofs bind mounts.
 - [Storage & cleanup](#storage--cleanup)
 - [Security](#security)
 - [Development](#development)
+- [Contributing](#contributing)
 - [Limitations](#limitations)
 - [Next steps](#next-steps)
 - [License](#license)
@@ -112,12 +113,22 @@ The single `macker` binary dispatches on its arguments:
 
 ## Installation
 
-### Option A — Build from source
+### Option A — Homebrew (recommended)
 
 ```bash
-git clone https://github.com/<you>/macker.git
-cd macker
-make build          # debug build
+brew install --cask djpfs/macker/macker
+```
+
+Installs the `Macker.app` bundle into `/Applications` (Launchpad/Spotlight
+discoverable). The cask lives in the
+[`homebrew-macker`](https://github.com/djpfs/homebrew-macker) tap and points to
+the latest stable `.pkg` from GitHub Releases.
+
+To use the CLI as a drop-in `docker` replacement, symlink the bundled binary:
+
+```bash
+ln -s /Applications/Macker.app/Contents/MacOS/macker /usr/local/bin/docker
+ln -s /Applications/Macker.app/Contents/MacOS/macker /usr/local/bin/docker-compose
 ```
 
 ### Option B — Install the CLI to your PATH
@@ -149,9 +160,13 @@ open dist/Macker-1.0.0.pkg
 Or, from the GUI, use **Settings → Install app in /Applications** to copy the
 app bundle into `/Applications` (Launchpad/Spotlight discoverable).
 
-### Option D — Homebrew (planned)
+### Option D — Build from source
 
-A Homebrew formula is on the roadmap.
+```bash
+git clone https://github.com/<you>/macker.git
+cd macker
+make build          # debug build
+```
 
 ---
 
@@ -328,6 +343,75 @@ CommandLineTools). The XPC protocol is not a stable public API — client and
 
 ---
 
+## Contributing
+
+Contributions are welcome — bug reports, feature requests, docs, and pull
+requests. Here's how to get involved.
+
+### Reporting issues
+
+Open an [issue](https://github.com/djpfs/Macker/issues) with:
+
+- A clear title and description of the problem.
+- Steps to reproduce, including your macOS version and `apple/container`
+  version.
+- The output of `macker version` and `macker selftest` if relevant.
+
+### Development setup
+
+See [Development](#development) for the full command reference. In short:
+
+```bash
+make build          # debug build
+make test           # unit tests (needs full Xcode)
+make lint           # swift-format
+make run ARGS="docker ps"   # run the CLI headless
+```
+
+Requirements:
+
+- **macOS 15+** on **Apple Silicon** (arm64).
+- **Full Xcode** — XCTest is not shipped with CommandLineTools, so `make test`
+  and the test targets require Xcode.
+- [apple/container](https://github.com/apple/container) installed and running
+  (`container-apiserver`). The XPC protocol is pinned to **1.2.2** in
+  `Package.swift` — client and runtime ship in lockstep.
+
+### Branch strategy
+
+- `main` — stable releases. Each successful push builds the `.pkg` and
+  publishes it as a GitHub Release.
+- `develop` — integration branch. **Open pull requests against `develop`.**
+
+### Code style
+
+- Run `make lint` (swift-format) before committing; CI enforces it.
+- Match the surrounding code — same naming, comment density, and structure.
+- Keep changes focused: one logical change per pull request.
+
+### Testing
+
+- Add or update tests for the code you change. Test targets live in `Tests/`.
+- Make sure `make test` passes locally (requires Xcode). CI runs the full
+  suite (build, test, lint, CodeQL) on every push and pull request.
+
+### Commit messages
+
+- Write clear, imperative commit messages that describe the change.
+- Keep the history clean — amend or rebase locally before pushing.
+
+### Releasing
+
+Releases are cut from `main` by the CI: a push to `main` builds the `.pkg` and
+publishes it as a stable GitHub Release (`v1.0.0.<run>`). After a release,
+refresh the Homebrew cask with:
+
+```bash
+./Scripts/update-cask.sh v1.0.0.<run>
+```
+
+---
+
 ## Limitations
 
 - **Apple Silicon only** — containers run as Linux VMs via Virtualization.framework.
@@ -355,7 +439,6 @@ Ideas and improvements on the roadmap, roughly ordered by impact:
   running, and surface a clear onboarding flow when the runtime is missing.
 
 ### Distribution
-- **Homebrew formula** — publish `macker` as a cask/formula.
 - **Notarization & signing** — sign the `.pkg` with a Developer ID and notarize
   it so Gatekeeper accepts it out of the box.
 - **Auto-update** — integrate Sparkle for seamless in-app updates.
