@@ -16,7 +16,8 @@ final class HotReloadServiceTests: XCTestCase {
             containerPath: "/app",
             containerID: "abc"
         )
-        let bridge = InotifyBridge(mounts: [mount], transport: RecordingTransport())
+        let transport = RecordingTransport()
+        let bridge = InotifyBridge(mounts: [mount], transport: transport)
 
         let changes = [
             FSEventWatcher.Change(path: "/Users/me/project/src/main.ts", isContentChange: true),
@@ -24,7 +25,7 @@ final class HotReloadServiceTests: XCTestCase {
         ]
         try await bridge.handle(changes)
 
-        let recorded = await bridge.transport.recorded
+        let recorded = transport.recorded
         XCTAssertEqual(recorded.count, 1)
         XCTAssertEqual(recorded[0].containerID, "abc")
         XCTAssertEqual(Set(recorded[0].paths), ["/app/src/main.ts", "/app/package.json"])
@@ -36,13 +37,14 @@ final class HotReloadServiceTests: XCTestCase {
             containerPath: "/app",
             containerID: "abc"
         )
-        let bridge = InotifyBridge(mounts: [mount], transport: RecordingTransport())
+        let transport = RecordingTransport()
+        let bridge = InotifyBridge(mounts: [mount], transport: transport)
 
         try await bridge.handle([
             FSEventWatcher.Change(path: "/Users/me/project", isContentChange: true)
         ])
 
-        let recorded = await bridge.transport.recorded
+        let recorded = transport.recorded
         XCTAssertEqual(recorded.first?.paths, ["/app"])
     }
 
@@ -52,13 +54,14 @@ final class HotReloadServiceTests: XCTestCase {
             containerPath: "/app",
             containerID: "abc"
         )
-        let bridge = InotifyBridge(mounts: [mount], transport: RecordingTransport())
+        let transport = RecordingTransport()
+        let bridge = InotifyBridge(mounts: [mount], transport: transport)
 
         try await bridge.handle([
             FSEventWatcher.Change(path: "/Users/me/other/file.txt", isContentChange: true)
         ])
 
-        let recorded = await bridge.transport.recorded
+        let recorded = transport.recorded
         XCTAssertTrue(recorded.isEmpty)
     }
 
@@ -68,13 +71,14 @@ final class HotReloadServiceTests: XCTestCase {
             containerPath: "/app",
             containerID: "abc"
         )
-        let bridge = InotifyBridge(mounts: [mount], transport: RecordingTransport())
+        let transport = RecordingTransport()
+        let bridge = InotifyBridge(mounts: [mount], transport: transport)
 
         try await bridge.handle([
             FSEventWatcher.Change(path: "/Users/me/project/file.txt", isContentChange: false)
         ])
 
-        let recorded = await bridge.transport.recorded
+        let recorded = transport.recorded
         XCTAssertTrue(recorded.isEmpty)
     }
 
@@ -83,14 +87,15 @@ final class HotReloadServiceTests: XCTestCase {
             InotifyBridge.Mount(hostPath: "/Users/me/a", containerPath: "/a", containerID: "one"),
             InotifyBridge.Mount(hostPath: "/Users/me/b", containerPath: "/b", containerID: "two"),
         ]
-        let bridge = InotifyBridge(mounts: mounts, transport: RecordingTransport())
+        let transport = RecordingTransport()
+        let bridge = InotifyBridge(mounts: mounts, transport: transport)
 
         try await bridge.handle([
             FSEventWatcher.Change(path: "/Users/me/a/x.txt", isContentChange: true),
             FSEventWatcher.Change(path: "/Users/me/b/y.txt", isContentChange: true),
         ])
 
-        let recorded = await bridge.transport.recorded
+        let recorded = transport.recorded
         XCTAssertEqual(Set(recorded.map(\.containerID)), ["one", "two"])
     }
 
@@ -118,14 +123,12 @@ private final class RecordingTransport: TouchTransport, @unchecked Sendable {
     private var _recorded: [Record] = []
 
     var recorded: [Record] {
-        lock.lock()
-        defer { lock.unlock() }
-        return _recorded
+        lock.withLock { _recorded }
     }
 
     func touch(paths: [String], in containerID: String) async throws {
-        lock.lock()
-        _recorded.append(Record(containerID: containerID, paths: paths))
-        lock.unlock()
+        lock.withLock {
+            _recorded.append(Record(containerID: containerID, paths: paths))
+        }
     }
 }
