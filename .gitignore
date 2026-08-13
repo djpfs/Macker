@@ -1,0 +1,26 @@
+# Swift Package Manager
+.build/
+.swiftpm/
+DerivedData/
+
+# Build artifacts
+dist/
+*.pkg
+*.dmg
+
+# Xcode
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+*.xcuserstate
+
+# macOS
+.DS_Store
+
+# Guest agent binary (built via Scripts/build-guest-agent.sh)
+Resources/guest-agent/guest-agent
+
+# Editor
+.vscode/
+.idea/
+*.swp
