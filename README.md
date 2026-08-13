@@ -116,12 +116,12 @@ The single `macker` binary dispatches on its arguments:
 ### Option A — Homebrew (recommended)
 
 ```bash
-brew install --cask djpfs/macker/macker
+brew install --cask djpfs/tools/macker
 ```
 
 Installs the `Macker.app` bundle into `/Applications` (Launchpad/Spotlight
 discoverable). The cask lives in the
-[`homebrew-macker`](https://github.com/djpfs/homebrew-macker) tap and points to
+[`homebrew-tools`](https://github.com/djpfs/homebrew-tools) tap and points to
 the latest stable `.pkg` from GitHub Releases.
 
 To use the CLI as a drop-in `docker` replacement, symlink the bundled binary:
