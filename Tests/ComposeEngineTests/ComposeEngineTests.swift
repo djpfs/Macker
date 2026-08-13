@@ -231,11 +231,12 @@ final class ComposeEngineTests: XCTestCase {
 
     func testParseVolumeSpec() {
         let project = ComposeProject(name: "myapp", services: [:])
-        let bind = ComposeOrchestrator.parseVolumeSpec("./html:/usr/share/nginx/html:ro", project: project)
+        let composeFile = "/Users/me/project/docker-compose.yml"
+        let bind = ComposeOrchestrator.parseVolumeSpec("./html:/usr/share/nginx/html:ro", project: project, basePath: composeFile)
         XCTAssertTrue(bind?.isVirtiofs ?? false)
         XCTAssertEqual(bind?.options, ["ro"])
 
-        let named = ComposeOrchestrator.parseVolumeSpec("data:/var/lib/data", project: project)
+        let named = ComposeOrchestrator.parseVolumeSpec("data:/var/lib/data", project: project, basePath: composeFile)
         XCTAssertTrue(named?.isVolume ?? false)
         XCTAssertEqual(named?.volumeName, "myapp_data")
     }
