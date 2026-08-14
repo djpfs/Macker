@@ -24,6 +24,79 @@ final class ComposeEngineTests: XCTestCase {
         XCTAssertEqual(web.environment["FOO"], "bar")
     }
 
+    func testParseProfilesAndServiceAttachments() throws {
+        let yaml = """
+        secrets:
+          db_password:
+            file: ./password.txt
+        configs:
+          app_config:
+            file: ./app.conf
+        services:
+          web:
+            image: nginx
+            profiles: ["frontend"]
+            secrets: [db_password]
+            configs: [app_config]
+          worker:
+            image: alpine
+            profiles: ["worker"]
+        """
+        let project = try ComposeParser().parse(yaml: yaml, profiles: ["frontend"])
+        XCTAssertEqual(project.services.count, 1)
+        XCTAssertNotNil(project.services["web"])
+        XCTAssertEqual(project.services["web"]?.secrets, ["db_password"])
+        XCTAssertEqual(project.services["web"]?.configs, ["app_config"])
+
+        let missingSecretYAML = """
+        services:
+          web:
+            image: nginx
+            secrets: [missing_secret]
+        """
+        XCTAssertThrowsError(try ComposeParser().parse(yaml: missingSecretYAML)) { error in
+            guard case ComposeParseError.unknownSecret("web", "missing_secret") = error else {
+                return XCTFail("expected unknownSecret, got \(error)")
+            }
+        }
+
+        let missingConfigYAML = """
+        services:
+          web:
+            image: nginx
+            configs: [missing_config]
+        """
+        XCTAssertThrowsError(try ComposeParser().parse(yaml: missingConfigYAML)) { error in
+            guard case ComposeParseError.unknownConfig("web", "missing_config") = error else {
+                return XCTFail("expected unknownConfig, got \(error)")
+            }
+        }
+    }
+
+    func testUndefinedSecretThrowsError() throws {
+        let yaml = """
+        services:
+          web:
+            image: nginx
+            secrets: [nonexistent_secret]
+        """
+        XCTAssertThrowsError(try ComposeParser().parse(yaml: yaml)) { error in
+            XCTAssertEqual(error as? ComposeParseError, .unknownSecret("web", "nonexistent_secret"))
+        }
+    }
+
+    func testUndefinedConfigThrowsError() throws {
+        let yaml = """
+        services:
+          web:
+            image: nginx
+            configs: [nonexistent_config]
+        """
+        XCTAssertThrowsError(try ComposeParser().parse(yaml: yaml)) { error in
+            XCTAssertEqual(error as? ComposeParseError, .unknownConfig("web", "nonexistent_config"))
+        }
+    }
+
     func testParseDefaultsNameToDirectory() throws {
         let yaml = """
         services:
