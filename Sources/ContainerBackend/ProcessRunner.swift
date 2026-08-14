@@ -63,8 +63,14 @@ public struct ProcessRunner: Sendable {
 
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
-        let stdinPipe = standardInput.map { _ in Pipe() }
-        process.standardInput = stdinPipe
+        let stdinPipe: Pipe?
+        if standardInput != nil {
+            let pipe = Pipe()
+            stdinPipe = pipe
+            process.standardInput = pipe
+        } else {
+            stdinPipe = nil
+        }
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
 

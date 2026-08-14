@@ -75,33 +75,29 @@ public struct ImageService: Sendable {
             args += ["--platform", platform]
         }
 
-        /// Authenticate to an OCI registry. The password is sent over stdin and
-        /// never appears in the process arguments or environment.
-        public func login(
-            registry: String,
-            username: String,
-            password: String
-        ) async throws {
+        args.append(reference)
+        let result = try await runner.run(args, timeout: .seconds(600))
+        guard result.succeeded else {
+            throw BackendError.operationFailed(
+                "image pull failed: \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))"
+            )
+        }
+    }
+
+    /// Authenticate to an OCI registry without exposing the password in args.
+    public func login(registry: String, username: String, password: String) async throws {
             let result = try await runner.run(
                 ["registry", "login", "--username", username, "--password-stdin", registry],
-                standardInput: Data((password + "\n").utf8),
-                timeout: .seconds(60)
+                standardInput: Data((password + "\n").utf8), timeout: .seconds(60)
             )
             guard result.succeeded else {
-                throw BackendError.operationFailed(
-                    "registry login failed: \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))"
-                )
-            }
+                throw BackendError.operationFailed("registry login failed: \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))")
+    }
         }
 
-        /// Build an image using a Dockerfile or Containerfile.
-        public func build(
-            context: String,
-            tag: String? = nil,
-            dockerfile: String? = nil,
-            buildArgs: [String: String] = [:],
-            noCache: Bool = false
-        ) async throws -> String {
+        /// Build an image from a Dockerfile or Containerfile.
+    public func build(context: String, tag: String? = nil, dockerfile: String? = nil,
+                          buildArgs: [String: String] = [:], noCache: Bool = false) async throws -> String {
             var args = ["build", "--progress", "plain"]
             if let tag, !tag.isEmpty { args += ["-t", tag] }
             if let dockerfile, !dockerfile.isEmpty { args += ["-f", dockerfile] }
@@ -112,19 +108,9 @@ public struct ImageService: Sendable {
             args.append(context)
             let result = try await runner.run(args, timeout: .seconds(1800))
             guard result.succeeded else {
-                throw BackendError.operationFailed(
-                    "image build failed: \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))"
-                )
+                throw BackendError.operationFailed("image build failed: \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))")
             }
             return result.stdout.isEmpty ? result.stderr : result.stdout
-        }
-        args.append(reference)
-        let result = try await runner.run(args, timeout: .seconds(600))
-        guard result.succeeded else {
-            throw BackendError.operationFailed(
-                "image pull failed: \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))"
-            )
-        }
     }
 
     /// Delete one or more images by ID or reference.

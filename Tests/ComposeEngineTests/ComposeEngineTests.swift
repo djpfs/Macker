@@ -24,6 +24,31 @@ final class ComposeEngineTests: XCTestCase {
         XCTAssertEqual(web.environment["FOO"], "bar")
     }
 
+    func testParseProfilesAndServiceAttachments() throws {
+        let yaml = """
+        secrets:
+          db_password:
+            file: ./password.txt
+        configs:
+          app_config:
+            file: ./app.conf
+        services:
+          web:
+            image: nginx
+            profiles: ["frontend"]
+            secrets: [db_password]
+            configs: [app_config]
+          worker:
+            image: alpine
+            profiles: ["worker"]
+        """
+        let project = try ComposeParser().parse(yaml: yaml, profiles: ["frontend"])
+        XCTAssertEqual(project.services.count, 1)
+        XCTAssertNotNil(project.services["web"])
+        XCTAssertEqual(project.services["web"]?.secrets, ["db_password"])
+        XCTAssertEqual(project.services["web"]?.configs, ["app_config"])
+    }
+
     func testParseDefaultsNameToDirectory() throws {
         let yaml = """
         services:
