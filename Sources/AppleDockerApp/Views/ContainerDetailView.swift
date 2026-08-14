@@ -125,6 +125,19 @@ private struct InfoView: View {
                         }
                     }
                 }
+                section("Security") {
+                    infoRow("Privileged", container.configuration.privileged ? "Yes" : "No")
+                    infoRow("Read-only rootfs", container.configuration.readOnly ? "Yes" : "No")
+                    if !container.configuration.capAdd.isEmpty {
+                        infoRow("Capabilities +", container.configuration.capAdd.joined(separator: ", "))
+                    }
+                    if !container.configuration.capDrop.isEmpty {
+                        infoRow("Capabilities -", container.configuration.capDrop.joined(separator: ", "))
+                    }
+                    if !container.configuration.securityOptions.isEmpty {
+                        infoRow("Security options", container.configuration.securityOptions.joined(separator: ", "))
+                    }
+                }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 12)

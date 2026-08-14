@@ -52,9 +52,17 @@ public struct ImageSummary: Sendable, Codable, Identifiable, Equatable {
 /// Manages images via the `container image` CLI.
 public struct ImageService: Sendable {
     private let runner: ProcessRunner
+    private let scanner: VulnerabilityScanner
+    private let auditLogger: AuditLogger
 
-    public init(runner: ProcessRunner = ProcessRunner()) {
+    public init(
+        runner: ProcessRunner = ProcessRunner(),
+        scanner: VulnerabilityScanner = VulnerabilityScanner(),
+        auditLogger: AuditLogger = .shared
+    ) {
         self.runner = runner
+        self.scanner = scanner
+        self.auditLogger = auditLogger
     }
 
     /// List all images.
@@ -82,6 +90,7 @@ public struct ImageService: Sendable {
                 "image pull failed: \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))"
             )
         }
+        await auditLogger.record(action: "image.pull", target: reference, succeeded: true)
     }
 
     /// Authenticate to an OCI registry without exposing the password in args.
@@ -141,6 +150,7 @@ public struct ImageService: Sendable {
                 "image delete failed: \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))"
             )
         }
+        await auditLogger.record(action: "image.delete", target: references.joined(separator: ","), succeeded: true)
     }
 
     /// Tag an image with a new reference.
@@ -151,6 +161,7 @@ public struct ImageService: Sendable {
                 "image tag failed: \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))"
             )
         }
+        await auditLogger.record(action: "image.tag", target: "\(source)->\(target)", succeeded: true)
     }
 
     /// Push an image to its registry.
@@ -161,6 +172,7 @@ public struct ImageService: Sendable {
                 "image push failed: \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))"
             )
         }
+        await auditLogger.record(action: "image.push", target: reference, succeeded: true)
     }
 
     /// Remove unused images. When `all` is true, removes ALL images (not just
@@ -176,6 +188,19 @@ public struct ImageService: Sendable {
             throw BackendError.operationFailed(
                 "image prune failed: \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))"
             )
+        }
+        await auditLogger.record(action: "image.prune", target: all ? "all" : "dangling", succeeded: true)
+    }
+
+    /// Scan an image for known vulnerabilities.
+    public func scan(reference: String, severities: [String] = ["CRITICAL", "HIGH", "MEDIUM", "LOW"]) async throws -> VulnerabilityScanReport {
+        do {
+            let report = try await scanner.scan(imageReference: reference, severities: severities)
+            await auditLogger.record(action: "image.scan", target: reference, succeeded: true)
+            return report
+        } catch {
+            await auditLogger.record(action: "image.scan", target: reference, succeeded: false, detail: error.localizedDescription)
+            throw error
         }
     }
 

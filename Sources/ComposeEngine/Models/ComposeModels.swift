@@ -125,6 +125,8 @@ public struct ServiceConfig: Sendable, Codable, Equatable {
     public var capAdd: [String]
     /// Linux capabilities to drop.
     public var capDrop: [String]
+    /// Extra security options.
+    public var securityOpt: [String]
     /// Size of /dev/shm.
     public var shmSize: String?
     /// Keep stdin open.
@@ -168,6 +170,7 @@ public struct ServiceConfig: Sendable, Codable, Equatable {
         dns: [String] = [],
         capAdd: [String] = [],
         capDrop: [String] = [],
+        securityOpt: [String] = [],
         shmSize: String? = nil,
         stdinOpen: Bool = false,
         tty: Bool = false,
@@ -205,6 +208,7 @@ public struct ServiceConfig: Sendable, Codable, Equatable {
         self.dns = dns
         self.capAdd = capAdd
         self.capDrop = capDrop
+        self.securityOpt = securityOpt
         self.shmSize = shmSize
         self.stdinOpen = stdinOpen
         self.tty = tty
@@ -244,6 +248,7 @@ public struct ServiceConfig: Sendable, Codable, Equatable {
         case dns
         case capAdd = "cap_add"
         case capDrop = "cap_drop"
+        case securityOpt = "security_opt"
         case shmSize = "shm_size"
         case stdinOpen = "stdin_open"
         case tty
@@ -284,6 +289,7 @@ public struct ServiceConfig: Sendable, Codable, Equatable {
         dns = try c.decodeIfPresent([String].self, forKey: .dns) ?? []
         capAdd = try c.decodeIfPresent([String].self, forKey: .capAdd) ?? []
         capDrop = try c.decodeIfPresent([String].self, forKey: .capDrop) ?? []
+        securityOpt = try c.decodeIfPresent([String].self, forKey: .securityOpt) ?? []
         shmSize = try c.decodeIfPresent(String.self, forKey: .shmSize)
         stdinOpen = try c.decodeIfPresent(Bool.self, forKey: .stdinOpen) ?? false
         tty = try c.decodeIfPresent(Bool.self, forKey: .tty) ?? false

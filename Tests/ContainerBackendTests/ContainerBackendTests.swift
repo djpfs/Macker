@@ -69,3 +69,84 @@ final class XPCMessageTests: XCTestCase {
         XCTAssertEqual(decoded.plugin, "vmnet")
     }
 }
+
+final class SecurityHardeningTests: XCTestCase {
+    func testResolveEnvironmentFromKeychainReference() throws {
+        let resolved = try KeychainSecretStore.resolveEnvironment(
+            ["TOKEN=keychain://my-token", "PLAIN=value"],
+            lookup: { name in
+                XCTAssertEqual(name, "my-token")
+                return "super-secret"
+            }
+        )
+        XCTAssertEqual(resolved, ["TOKEN=super-secret", "PLAIN=value"])
+    }
+
+    func testResolveEnvironmentThrowsWhenSecretMissing() {
+        XCTAssertThrowsError(
+            try KeychainSecretStore.resolveEnvironment(["TOKEN=keychain://missing"], lookup: { _ in nil })
+        ) { error in
+            guard case BackendError.notFound(let message) = error else {
+                return XCTFail("expected notFound, got \(error)")
+            }
+            XCTAssertEqual(message, "secret 'missing'")
+        }
+    }
+
+    func testParseTrivyReport() throws {
+        let json = """
+        {
+          "Results": [
+            {
+              "Vulnerabilities": [
+                {
+                  "VulnerabilityID": "CVE-1",
+                  "PkgName": "openssl",
+                  "InstalledVersion": "1.0.0",
+                  "FixedVersion": "1.0.1",
+                  "Title": "Demo vuln",
+                  "Severity": "HIGH",
+                  "PrimaryURL": "https://example.com/CVE-1"
+                },
+                {
+                  "VulnerabilityID": "CVE-2",
+                  "PkgName": "zlib",
+                  "Severity": "LOW"
+                }
+              ]
+            }
+          ]
+        }
+        """
+        let report = try VulnerabilityScanner.parseTrivyReport(json, imageReference: "demo:latest")
+        XCTAssertEqual(report.imageReference, "demo:latest")
+        XCTAssertEqual(report.findings.count, 2)
+        XCTAssertEqual(report.totalBySeverity["HIGH"], 1)
+        XCTAssertEqual(report.totalBySeverity["LOW"], 1)
+    }
+
+    func testContainerConfigurationDefaultsSecurityFields() throws {
+        let image = ImageDescription(
+            reference: "nginx:latest",
+            descriptor: Descriptor(
+                mediaType: "application/vnd.oci.image.manifest.v1+json",
+                digest: "sha256:abc",
+                size: 123
+            )
+        )
+        let original = ContainerConfiguration(
+            id: "demo",
+            image: image,
+            process: .init(executable: "/bin/sh", arguments: [], environment: [])
+        )
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(original)) as? [String: Any]
+        )
+        object.removeValue(forKey: "privileged")
+        object.removeValue(forKey: "securityOptions")
+        let data = try JSONSerialization.data(withJSONObject: object)
+        let config = try JSONDecoder().decode(ContainerConfiguration.self, from: data)
+        XCTAssertFalse(config.privileged)
+        XCTAssertEqual(config.securityOptions, [])
+    }
+}

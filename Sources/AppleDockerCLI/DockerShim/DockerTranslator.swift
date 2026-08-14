@@ -15,9 +15,14 @@ import ComposeEngine
 /// Translates docker commands into runtime operations.
 public struct DockerTranslator: Sendable {
     private let service: ContainerService
+    private let auditLogger: AuditLogger
 
-    public init(service: ContainerService = ContainerService()) {
+    public init(
+        service: ContainerService = ContainerService(),
+        auditLogger: AuditLogger = .shared
+    ) {
         self.service = service
+        self.auditLogger = auditLogger
     }
 
     /// Execute a parsed docker command.
@@ -100,6 +105,10 @@ public struct DockerTranslator: Sendable {
             throw DockerShimError.unsupportedCommand("attach")
         case "history":
             throw DockerShimError.unsupportedCommand("history")
+        case "scan":
+            try await scan(command)
+        case "secret":
+            try await secret(command)
         case "compose":
             try await compose(command)
         default:
@@ -354,7 +363,7 @@ public struct DockerTranslator: Sendable {
         for envSpec in command.value(short: "e", long: "env")?.split(separator: ",") ?? [] {
             env.append(String(envSpec))
         }
-        config.initProcess.environment = Self.deduplicateEnv(env)
+        config.initProcess.environment = try service.secrets.resolveEnvironment(Self.deduplicateEnv(env))
 
         // --cpus / --memory
         if let cpus = command.value("cpus").flatMap(Int.init) {
@@ -362,6 +371,22 @@ public struct DockerTranslator: Sendable {
         }
         if let memory = command.value("memory").flatMap(Self.parseMemory) {
             config.resources.memoryInBytes = memory
+        }
+
+        // Security-related runtime options.
+        config.readOnly = command.has("read-only")
+        config.privileged = command.has("privileged")
+        config.capAdd = Self.parseCapabilities(command.value("cap-add"))
+        config.capDrop = Self.parseCapabilities(command.value("cap-drop"))
+        config.securityOptions = command.value("security-opt")?
+            .split(separator: ",")
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty } ?? []
+        if let shmSize = command.value("shm-size").flatMap(Self.parseMemory) {
+            config.shmSize = shmSize
+        }
+        if let stopSignal = command.value("stop-signal"), !stopSignal.isEmpty {
+            config.stopSignal = stopSignal
         }
 
         // --rm
@@ -388,6 +413,20 @@ public struct DockerTranslator: Sendable {
         config.mounts = try await resolveVolumeSources(config.mounts)
 
         return (config, autoRemove)
+    }
+
+    private static func parseCapabilities(_ input: String?) -> [String] {
+        guard let input, !input.isEmpty else { return [] }
+        return input
+            .split(separator: ",")
+            .map { cap in
+                let upper = cap.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+                if upper.isEmpty || upper == "ALL" || upper.hasPrefix("CAP_") {
+                    return upper
+                }
+                return "CAP_\(upper)"
+            }
+            .filter { !$0.isEmpty }
     }
 
     /// Run a `container` CLI subcommand, streaming its stdout to our own and
@@ -475,6 +514,96 @@ public struct DockerTranslator: Sendable {
         }
         args += command.arguments
         try await runCLI(args)
+    }
+
+    /// `docker scan` — scan image vulnerabilities using Trivy.
+    private func scan(_ command: DockerCommand) async throws {
+        guard let reference = command.arguments.first else {
+            throw DockerShimError.missingArgument("IMAGE")
+        }
+        let severities = command.value("severity")?
+            .split(separator: ",")
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines).uppercased() }
+            .filter { !$0.isEmpty } ?? ["CRITICAL", "HIGH", "MEDIUM", "LOW"]
+
+        let report = try await service.images.scan(reference: reference, severities: severities)
+        if (command.value("format") ?? "").lowercased() == "json" {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            encoder.dateEncodingStrategy = .iso8601
+            let data = try encoder.encode(report)
+            print(String(decoding: data, as: UTF8.self))
+            return
+        }
+
+        print("Image: \(report.imageReference)")
+        print("Scanned at: \(ISO8601DateFormatter().string(from: report.scannedAt))")
+        for severity in ["CRITICAL", "HIGH", "MEDIUM", "LOW"] {
+            let count = report.totalBySeverity[severity, default: 0]
+            print("\(severity): \(count)")
+        }
+        if report.findings.isEmpty {
+            print("No vulnerabilities found.")
+            return
+        }
+        print("")
+        let headers = ["VulnerabilityID", "Severity", "Package", "Installed", "Fixed"]
+        let rows = report.findings.prefix(200).map { finding in
+            [finding.vulnerabilityID, finding.severity, finding.packageName, finding.installedVersion ?? "-", finding.fixedVersion ?? "-"]
+        }
+        Self.printTable(headers: headers, rows: rows)
+    }
+
+    /// `docker secret` — Keychain-backed secret management.
+    private func secret(_ command: DockerCommand) async throws {
+        let action = "secret.\(command.subSubcommand ?? "unknown")"
+        do {
+            switch command.subSubcommand {
+            case "ls":
+                let names = try service.secrets.listSecretNames()
+                print("NAME")
+                for name in names {
+                    print(name)
+                }
+            case "create":
+                guard let name = command.arguments.first else {
+                    throw DockerShimError.missingArgument("SECRET_NAME")
+                }
+                let source = command.arguments.dropFirst().first
+                let value: String
+                if let source, source != "-" {
+                    value = try String(contentsOfFile: source, encoding: .utf8)
+                } else {
+                    let data = FileHandle.standardInput.readDataToEndOfFile()
+                    value = String(decoding: data, as: UTF8.self)
+                }
+                try service.secrets.setSecret(name: name, value: value.trimmingCharacters(in: .newlines))
+                print(name)
+            case "inspect":
+                let names = command.arguments
+                guard !names.isEmpty else { throw DockerShimError.missingArgument("SECRET_NAME") }
+                let existing = Set(try service.secrets.listSecretNames())
+                for name in names where !existing.contains(name) {
+                    throw BackendError.notFound("secret '\(name)'")
+                }
+                let payload = names.map { ["Name": $0] }
+                let data = try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys])
+                print(String(decoding: data, as: UTF8.self))
+            case "rm", "remove":
+                let names = command.arguments
+                guard !names.isEmpty else { throw DockerShimError.missingArgument("SECRET_NAME") }
+                for name in names {
+                    try service.secrets.deleteSecret(named: name)
+                    print(name)
+                }
+            default:
+                throw DockerShimError.unsupportedCommand("secret \(command.subSubcommand ?? "")")
+            }
+            await auditLogger.record(action: action, target: command.arguments.first, succeeded: true)
+        } catch {
+            await auditLogger.record(action: action, target: command.arguments.first, succeeded: false, detail: error.localizedDescription)
+            throw error
+        }
     }
 
     /// Recreate a container with a modified configuration (stop, delete,
