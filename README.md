@@ -1,3 +1,15 @@
+<style>
+/* Keep the SVG icons legible on GitHub's dark theme. The Octicons and
+   Simple-Icons SVGs are monochrome black by default; invert them when
+   the viewer prefers a dark color scheme. */
+@media (prefers-color-scheme: dark) {
+  img[src*="primer/octicons"],
+  img[src*="simple-icons"] {
+    filter: invert(1) hue-rotate(180deg);
+  }
+}
+</style>
+
 <div align="center">
 
 <img src="docs/img/screenshot-01.png" alt="Macker Dashboard" width="900" />
