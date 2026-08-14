@@ -101,7 +101,7 @@ public struct ComposeParser: Sendable {
         var result = project
         if let profiles {
             result.services = result.services.filter { _, service in
-                service.profiles.isEmpty || !service.profiles.isDisjoint(with: profiles)
+                service.profiles.isEmpty || service.profiles.contains { profiles.contains($0) }
             }
         }
         if result.name.isEmpty {
