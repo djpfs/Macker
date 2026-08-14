@@ -16,23 +16,13 @@ reload for virtiofs bind mounts.
 
 - [Features](#features)
 - [How it works](#how-it-works)
-- [Architecture](#architecture)
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Usage](#usage)
   - [GUI](#gui)
   - [CLI](#cli)
   - [Docker compatibility](#docker-compatibility)
-- [Supported commands](#supported-commands)
-- [Compose engine](#compose-engine)
-- [Hot reload](#hot-reload)
-- [Menu bar](#menu-bar)
-- [Storage & cleanup](#storage--cleanup)
-- [Security](#security)
-- [Development](#development)
-- [Contributing](#contributing)
-- [Limitations](#limitations)
-- [Next steps](#next-steps)
+- [Documentation](#documentation)
 - [License](#license)
 
 ---
@@ -66,38 +56,6 @@ The single `macker` binary dispatches on its arguments:
 
 - **No arguments** → launches the SwiftUI GUI.
 - **With arguments** → runs the headless CLI (ArgumentParser).
-
----
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    PRESENTATION LAYER                       │
-│  Views (SwiftUI)  ←  AppState (@Observable)                │
-├─────────────────────────────────────────────────────────────┤
-│                    SERVICE LAYER                            │
-│  AppState (polling, state aggregation)                      │
-│  ContainerService | ComposeEngine | HotReloadService        │
-├─────────────────────────────────────────────────────────────┤
-│                    BACKEND LAYER                            │
-│  XPCClient (primary) | ProcessRunner (fallback)             │
-│  LaunchdManager (daemon lifecycle)                          │
-├─────────────────────────────────────────────────────────────┤
-│                    PLATFORM LAYER                           │
-│  container-apiserver (XPC) | container CLI | virtiofs/VZ     │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### Modules
-
-| Module | Purpose |
-|--------|---------|
-| `AppleDockerApp` | SwiftUI GUI + dual-binary dispatch |
-| `AppleDockerCLI` | ArgumentParser root + `docker`/`compose` shim |
-| `ContainerBackend` | Lightweight XPC client for `container-apiserver` |
-| `ComposeEngine` | YAML parser, resolver, orchestrator, DNS sync, health checks |
-| `HotReloadService` | FSEvents → synthetic inotify bridge for virtiofs mounts |
 
 ---
 
@@ -197,11 +155,11 @@ The GUI provides:
 ### CLI
 
 ```bash
-macker version
-macker selftest
-macker system status
-macker docker ps
-macker compose up -d
+docker version
+docker selftest
+docker system status
+docker ps
+docker compose up -d
 ```
 
 ### Docker compatibility
@@ -211,258 +169,38 @@ subcommands are transparently routed to the docker shim. So these are
 equivalent:
 
 ```bash
-macker ps
 docker ps
+macker ps
 ```
 
 ---
 
-## Supported commands
+## Screenshots
 
-### `docker` (container)
+![Dashboard — runtime status, resource cards (containers running/total, images, volumes, networks), CPU/Memory/Block I/O charts, and the active containers table](docs/img/screenshot-01.png)
+![Containers — search and filter sidebar with running containers grouped by compose project (propedido-api)](docs/img/screenshot-02.png)
+![Container detail — Info tab showing configuration (ID, image, status, created), published ports, mounts, and compose labels](docs/img/screenshot-03.png)
+![Images — repository, tag, ID, size, created date, and platform columns with a pull action](docs/img/screenshot-04.png)
+![Builds — empty state with Build and Prune cache actions, shown when there are no builds yet](docs/img/screenshot-05.png)
+![Volumes — name, driver, format, size, and created columns](docs/img/screenshot-06.png)
+![Networks — name, mode, subnet, and plugin columns](docs/img/screenshot-07.png)
+![Compose — current compose file, list of services with mapped ports, Up/Down actions, and a logs panel](docs/img/screenshot-08.png)
+![Activity Monitor — aggregate CPU, Memory, Containers, and Network cards plus a per-container usage table](docs/img/screenshot-09.png)
+![Container detail — Settings tab with networks, published ports, resource limits (memory/CPU), environment variables, and labels](docs/img/screenshot-10.png)
+![Settings — General tab with polling interval, launch at login, menu bar toggle, version info, and install actions](docs/img/screenshot-11.png)
+![Settings — Storage tab with disk usage breakdown and cleanup actions (prune unused images, prune all images, delete buildkit builder, full cleanup)](docs/img/screenshot-12.png)
+![Settings — Menu bar tab with visibility toggle, container list size, and Available/Active items to customize menu bar metrics](docs/img/screenshot-13.png)
+![Menu bar extra — CPU/memory rings, per-project and per-container quick actions, and the Macker dropdown with Open Macker and an actions menu](docs/img/screenshot-14.png)
 
-| Group | Commands |
-|-------|----------|
-| **Containers** | `ps`, `run`, `create`, `start`, `stop`, `restart`, `kill`, `rm`, `exec`, `logs`, `stats`, `wait`, `port`, `top`, `pause`, `unpause`, `cp`, `inspect`, `events` |
-| **Images** | `images`, `pull`, `push`, `build`, `tag`, `rmi`, `prune`, `load`, `save`, `search` |
-| **Volumes** | `volume create`, `volume ls`, `volume rm`, `volume inspect`, `volume prune` |
-| **Networks** | `network create`, `network ls`, `network rm`, `network inspect`, `network connect`, `network disconnect`, `network prune` |
-| **System** | `system df`, `system prune`, `system info`, `system version` |
+## Documentation
 
-### `docker compose`
-
-| Command | Description |
-|---------|-------------|
-| `up` | Create and start services (`-d` to detach) |
-| `down` | Stop and remove services (`-v` removes volumes) |
-| `ps` | List project containers |
-| `logs` | Stream logs (`-f` follow, `--tail N`) |
-| `stop` / `start` / `restart` | Manage service lifecycle |
-| `pull` | Pull service images |
-| `build` | Build service images |
-| `create` | Create services without starting |
-| `exec` | Run a command in a service container |
-| `run` | Run a one-off command |
-| `config` | Print the resolved compose config as JSON |
-| `images` | List service images |
-| `kill` | Kill service containers |
-| `port` | Print the public port for a service |
-| `rm` | Remove stopped service containers |
-
-Unsupported commands fail with an explicit, actionable message.
-
----
-
-## Compose engine
-
-`macker compose up`:
-
-1. Parses `docker-compose.yml` (Yams) with `${VAR}` interpolation and `.env`
-   support.
-2. Resolves `depends_on` topologically (including `service_healthy` gating).
-3. Creates and starts containers in dependency order.
-4. Writes `<service-name> <ip>` entries into each container's `/etc/hosts` so
-   services resolve each other by name.
-5. Recreates containers when their config hash changes.
-
-**Supported compose keys:** `services`, `image`, `build`, `ports`, `volumes`,
-`networks`, `environment`, `env_file`, `depends_on` (with `service_healthy`),
-`healthcheck`, `profiles`, `command`, `entrypoint`, `restart`, `labels`,
-`deploy.resources.limits`, `${VAR}` interpolation, `.env`.
-
----
-
-## Hot reload
-
-virtiofs does not propagate inotify events into the guest, so watch tools
-(Vite, webpack, nodemon, Air) never see host-side edits. Following the
-Colima/Lima `--mount-inotify` pattern:
-
-1. `FSEventWatcher` watches host directories (debounced, 100ms windows).
-2. `InotifyBridge` maps host paths to container paths and batches them.
-3. A tiny guest agent (`Resources/guest-agent`, built with
-   `Scripts/build-guest-agent.sh`) `touch`es each file.
-4. The Linux kernel emits inotify ATTRIB → watch tools rebuild.
-
-**Known limitations:** only ATTRIB events are synthesized (no MODIFY/CREATE/
-DELETE), and deletions on the host do not propagate.
-
----
-
-## Menu bar
-
-The menu bar extra shows customizable metrics (CPU, memory, container counts,
-etc.) with per-container quick actions. Configure which metrics appear and
-their order in **Settings → Menu bar**. The menu bar also includes an
-**Open Macker** action that focuses the existing window instead of
-spawning a new instance.
-
----
-
-## Storage & cleanup
-
-The native runtime stores each image as a full ext4 snapshot (no layer
-deduplication like Docker's overlay2), so storage can grow quickly. Macker
-provides:
-
-- **GUI:** Settings → Storage — disk usage, prune unused images, prune all
-  images, delete the buildkit builder, and full cleanup.
-- **CLI:** `docker system prune [-a] [--builder]` — `--builder` also deletes
-  the buildkit builder (frees the build cache).
-
----
-
-## Security
-
-- **Privilege escalation**: the Settings "Install CLI" and "Install app in
-  /Applications" actions run `osascript` with administrator privileges. These
-  are **user-initiated** and only copy the app's own binary into standard
-  locations. See [SECURITY.md](SECURITY.md).
-- **No secrets**: the project contains no hardcoded credentials, API keys, or
-  tokens. Do not commit `.env` files or `firebase-adminsdk-*.json`.
-- **Shell safety**: subprocesses are launched with argument arrays (not shell
-  string interpolation), so command arguments are not shell-injected.
-
----
-
-## Development
-
-```bash
-make build          # debug build
-make test           # unit tests (needs full Xcode)
-make release        # release build
-make lint           # swift-format (if installed)
-make guest-agent    # cross-compile the hot-reload agent
-make clean          # remove build artifacts
-```
-
-Tests run in CI on macOS with full Xcode (XCTest is not shipped with
-CommandLineTools). The XPC protocol is not a stable public API — client and
-`container-apiserver` ship in lockstep; bump `containerVersion` in
-`Package.swift` when updating the runtime.
-
----
-
-## Contributing
-
-Contributions are welcome — bug reports, feature requests, docs, and pull
-requests. Here's how to get involved.
-
-### Reporting issues
-
-Open an [issue](https://github.com/djpfs/Macker/issues) with:
-
-- A clear title and description of the problem.
-- Steps to reproduce, including your macOS version and `apple/container`
-  version.
-- The output of `macker version` and `macker selftest` if relevant.
-
-### Development setup
-
-See [Development](#development) for the full command reference. In short:
-
-```bash
-make build          # debug build
-make test           # unit tests (needs full Xcode)
-make lint           # swift-format
-make run ARGS="docker ps"   # run the CLI headless
-```
-
-Requirements:
-
-- **macOS 15+** on **Apple Silicon** (arm64).
-- **Full Xcode** — XCTest is not shipped with CommandLineTools, so `make test`
-  and the test targets require Xcode.
-- [apple/container](https://github.com/apple/container) installed and running
-  (`container-apiserver`). The XPC protocol is pinned to **1.2.2** in
-  `Package.swift` — client and runtime ship in lockstep.
-
-### Branch strategy
-
-- `main` — stable releases. Each successful push builds the `.pkg` and
-  publishes it as a GitHub Release.
-- `develop` — integration branch. **Open pull requests against `develop`.**
-
-### Code style
-
-- Run `make lint` (swift-format) before committing; CI enforces it.
-- Match the surrounding code — same naming, comment density, and structure.
-- Keep changes focused: one logical change per pull request.
-
-### Testing
-
-- Add or update tests for the code you change. Test targets live in `Tests/`.
-- Make sure `make test` passes locally (requires Xcode). CI runs the full
-  suite (build, test, lint, CodeQL) on every push and pull request.
-
-### Commit messages
-
-- Write clear, imperative commit messages that describe the change.
-- Keep the history clean — amend or rebase locally before pushing.
-
-### Releasing
-
-Releases are cut from `main` by the CI: a push to `main` builds the `.pkg` and
-publishes it as a stable GitHub Release (`v1.0.0.<run>`). After a release,
-refresh the Homebrew cask with:
-
-```bash
-./Scripts/update-cask.sh v1.0.0.<run>
-```
-
----
-
-## Limitations
-
-- **Apple Silicon only** — containers run as Linux VMs via Virtualization.framework.
-- **Protocol lockstep** — the XPC protocol is pinned to `apple/container 1.2.2`.
-- **No layer deduplication** — each image is a full snapshot; storage can grow
-  quickly (see [Storage & cleanup](#storage--cleanup)).
-- **Hot reload** — only ATTRIB events are synthesized.
-- **Not all docker commands** — unsupported commands fail with an explicit
-  message (e.g. `attach`, `update`, `history`, `rename`).
-
----
-
-## Next steps
-
-Ideas and improvements on the roadmap, roughly ordered by impact:
-
-### Reliability & correctness
-- **Layer deduplication** — the native runtime stores each image as a full
-  snapshot. Investigate sharing base layers across images to cut storage.
-- **More docker commands** — implement `attach`, `update`, `history`, `rename`,
-  and `docker compose` gaps (`top`, `events`, `pause`).
-- **Hot reload fidelity** — synthesize MODIFY/CREATE/DELETE inotify events, not
-  just ATTRIB, and propagate host-side deletions.
-- **Graceful daemon handling** — auto-start `container-apiserver` if it is not
-  running, and surface a clear onboarding flow when the runtime is missing.
-
-### Distribution
-- **Notarization & signing** — sign the `.pkg` with a Developer ID and notarize
-  it so Gatekeeper accepts it out of the box.
-- **Auto-update** — integrate Sparkle for seamless in-app updates.
-- **CI release pipeline** — build and attach signed `.pkg`/`.dmg` artifacts to
-  GitHub Releases on tag push.
-
-### GUI & UX
-- **Compose history** — persist recently used compose files for one-click
-  reload.
-- **Container settings** — richer per-container configuration (networks, port
-  mapping, resource limits) from the detail pane.
-- **Dashboard** — more chart types and per-container filtering.
-- **Localization** — add pt-BR and other locales.
-
-### Performance
-- **Faster polling** — batch stats collection and reduce refresh overhead for
-  large container counts.
-- **Build cache** — surface buildkit cache usage and per-image reclaimable
-  space in the GUI.
-
-### Testing
-- **More unit tests** — expand coverage for the compose parser, orchestrator,
-  and docker shim.
-- **Integration tests** — run against a real `container-apiserver` in CI.
+- [Architecture](docs/ARCHITECTURE.md) — layers, modules, and how they fit together.
+- [Supported commands](docs/COMMANDS.md) — full `docker` and `docker compose` reference.
+- [Compose engine & hot reload](docs/COMPOSE-ENGINE.md) — how `docker compose up` works and the virtiofs inotify bridge.
+- [GUI features](docs/GUI.md) — menu bar and storage & cleanup.
+- [Security](docs/SECURITY.md) — security policy and notes.
+- [Contributing](docs/CONTRIBUTING.md) — development setup, code style, testing, releasing.
+- [Roadmap & limitations](docs/ROADMAP.md) — known limitations and planned improvements.
 
 ---
 
