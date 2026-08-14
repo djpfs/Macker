@@ -1,81 +1,263 @@
+<div align="center">
+
+<img src="docs/img/screenshot-01.png" alt="Macker Dashboard" width="900" />
+
+<br />
+
+<!-- https://simpleicons.org/?q=docker -->
+<img src="https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/docker.svg" alt="Docker" width="64" height="64" />
+
 # Macker
 
-A **Docker Desktop replacement** built on Apple's native container runtime
-([`apple/container`](https://github.com/apple/container)). It ships a native
-macOS SwiftUI GUI **and** a CLI shim you can symlink as `docker` /
-`docker-compose`, plus a custom Compose engine with service-name DNS and hot
-reload for virtiofs bind mounts.
+### The Docker Desktop replacement that runs on Apple's native container runtime.
 
-> Containers run as lightweight Linux VMs on Apple Silicon via
-> Virtualization.framework — no Docker daemon, no Docker Desktop license, no
-> gRPC/NIO dependency.
+**One native macOS GUI. One CLI that doubles as `docker` and `docker-compose`. Zero gRPC. Zero NIO. Zero daemon of its own.**
 
----
+<br />
 
-## Table of Contents
+[![macOS](https://img.shields.io/badge/macOS-15%2B-black?style=for-the-badge&logo=apple&logoColor=white)](https://www.apple.com/macos/sequoia/)
+[![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-arm64-FF375F?style=for-the-badge&logo=apple&logoColor=white)](https://en.wikipedia.org/wiki/Apple_silicon)
+[![Swift](https://img.shields.io/badge/Swift-5.9%2B-F05138?style=for-the-badge&logo=swift&logoColor=white)](https://swift.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
+[![GitHub release](https://img.shields.io/github/v/release/djpfs/Macker?style=for-the-badge&logo=github)](https://github.com/djpfs/Macker/releases)
+[![Homebrew Cask](https://img.shields.io/badge/Homebrew-cask-FBB040?style=for-the-badge&logo=homebrew&logoColor=white)](https://github.com/djpfs/homebrew-tools)
 
-- [Features](#features)
-- [How it works](#how-it-works)
-- [Requirements](#requirements)
-- [Installation](#installation)
-- [Usage](#usage)
-  - [GUI](#gui)
-  - [CLI](#cli)
-  - [Docker compatibility](#docker-compatibility)
-- [Documentation](#documentation)
-- [License](#license)
+<br />
 
----
+[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/djpfs/Macker/ci.yml?branch=main&style=for-the-badge)](https://github.com/djpfs/Macker/actions)
+[![CodeQL](https://img.shields.io/github/actions/workflow/status/djpfs/Macker/codeql.yml?branch=main&style=for-the-badge&label=CodeQL&logo=github-actions)](https://github.com/djpfs/Macker/security/code-scanning)
+[![Swift Format](https://img.shields.io/badge/lint-swift--format-FF6B6B?style=for-the-badge&logo=swift)](https://github.com/nicklockwood/SwiftFormat)
 
-## Features
+<br />
 
-- **Native macOS GUI (SwiftUI)** — Dashboard, Containers, Images, Builds,
-  Volumes, Networks, Compose, Activity Monitor and Settings.
-- **Docker-compatible CLI** — one binary, two modes. Symlink it as `docker`
-  and `docker-compose` for drop-in compatibility.
-- **Custom Compose engine** — YAML parser, `${VAR}` interpolation, `.env`
-  support, topological `depends_on` resolution, config-hash recreation,
-  service-name DNS via `/etc/hosts`, and health-check gating.
-- **Hot reload** — FSEvents → synthetic inotify bridge so Vite/webpack/nodemon
-  rebuild when you edit files on the host (virtiofs does not propagate inotify).
-- **Menu bar extra** — CPU/memory rings, per-container quick actions, and
-  customizable metrics.
-- **Storage management** — prune images, delete the buildkit builder, and full
-  cleanup from the GUI or CLI.
+[<img src="https://img.shields.io/badge/Screenshots-1E90FF?style=for-the-badge&logo=files&logoColor=white" alt="Screenshots" />](#-screenshots) ·
+[<img src="https://img.shields.io/badge/Features-28A745?style=for-the-badge&logo=sparkles&logoColor=white" alt="Features" />](#-features) ·
+[<img src="https://img.shields.io/badge/Install-FF6B35?style=for-the-badge&logo=rocket&logoColor=white" alt="Install" />](#-install) ·
+[<img src="https://img.shields.io/badge/Docs-6F42C1?style=for-the-badge&logo=readthedocs&logoColor=white" alt="Docs" />](docs/ARCHITECTURE.md) ·
+[<img src="https://img.shields.io/badge/Discussions-0D96F6?style=for-the-badge&logo=github&logoColor=white" alt="Discussions" />](https://github.com/djpfs/Macker/discussions)
+
+<br />
+
+</div>
 
 ---
 
-## How it works
+<!-- Octicon "zap" — TL;DR -->
+<img src="https://raw.githubusercontent.com/primer/octicons/main/icons/zap-16.svg" width="22" align="absmiddle" /> **TL;DR**
 
-`apple/container` exposes a private XPC API (`container-apiserver`). Apple
-Docker talks to it through a lightweight XPC client — no gRPC, no NIO, no
-daemon of its own. Operations that have no XPC route (image build, pull, push,
-tag, prune) fall back to the `container` CLI.
+> **Macker** replaces Docker Desktop on macOS by talking directly to Apple's
+> [`apple/container`](https://github.com/apple/container) runtime — no Docker
+> daemon, no license, no Electron, no gRPC stack.
+>
+> - <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/device-desktop-16.svg" width="14" align="absmiddle" /> **Native SwiftUI GUI** — Dashboard, Containers, Images, Builds, Volumes, Networks, Compose, Activity Monitor, Settings.
+> - <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/terminal-16.svg" width="14" align="absmiddle" /> **Drop-in CLI** — symlink the binary as `docker` and `docker-compose`.
+> - <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/package-16.svg" width="14" align="absmiddle" /> **Custom Compose engine** — `${VAR}` interpolation, `depends_on` with `service_healthy`, service-name DNS, config-hash recreation.
+> - <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/sync-16.svg" width="14" align="absmiddle" /> **Hot reload** — synthetic inotify bridge over virtiofs so Vite/webpack/nodemon rebuild on host edits.
+> - <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/graph-16.svg" width="14" align="absmiddle" /> **Menu bar extra** — CPU/memory rings and per-container quick actions.
+
+---
+
+<!-- Octicon "image" — Screenshots -->
+<img src="https://raw.githubusercontent.com/primer/octicons/main/icons/image-16.svg" width="22" align="absmiddle" /> **Screenshots**
+
+<br />
+
+<div align="center">
+<img src="docs/img/screenshot-01.png" alt="Dashboard" width="900" />
+<br /><sub><b>Dashboard</b> — runtime status, resource cards, live CPU/Memory/Block I/O charts, and active containers.</sub>
+</div>
+
+<br />
+
+<details>
+<summary><b><img src="https://raw.githubusercontent.com/primer/octicons/main/icons/file-directory-16.svg" width="14" align="absmiddle" /> Containers &amp; details</b></summary>
+<br />
+
+<div align="center">
+<img src="docs/img/screenshot-02.png" alt="Containers list" width="900" />
+<br /><sub><b>Containers</b> — search &amp; filter sidebar with running containers grouped by compose project.</sub>
+</div>
+
+<br />
+
+<div align="center">
+<img src="docs/img/screenshot-03.png" alt="Container info" width="900" />
+<br /><sub><b>Container detail · Info</b> — configuration, ports, mounts, and compose labels.</sub>
+</div>
+
+<br />
+
+<div align="center">
+<img src="docs/img/screenshot-10.png" alt="Container settings" width="900" />
+<br /><sub><b>Container detail · Settings</b> — networks, published ports, resource limits, env vars, labels.</sub>
+</div>
+</details>
+
+<details>
+<summary><b><img src="https://raw.githubusercontent.com/primer/octicons/main/icons/columns-16.svg" width="14" align="absmiddle" /> Images · Builds · Volumes · Networks</b></summary>
+<br />
+
+<div align="center">
+<img src="docs/img/screenshot-04.png" alt="Images" width="900" />
+<br /><sub><b>Images</b> — repository, tag, ID, size, creation date, and platform.</sub>
+</div>
+
+<br />
+
+<div align="center">
+<img src="docs/img/screenshot-05.png" alt="Builds" width="900" />
+<br /><sub><b>Builds</b> — empty state with Build and Prune cache actions.</sub>
+</div>
+
+<br />
+
+<div align="center">
+<img src="docs/img/screenshot-06.png" alt="Volumes" width="900" />
+<br /><sub><b>Volumes</b> — name, driver, format, size, and created date.</sub>
+</div>
+
+<br />
+
+<div align="center">
+<img src="docs/img/screenshot-07.png" alt="Networks" width="900" />
+<br /><sub><b>Networks</b> — name, mode, subnet, and plugin.</sub>
+</div>
+</details>
+
+<details>
+<summary><b><img src="https://raw.githubusercontent.com/primer/octicons/main/icons/three-bars-16.svg" width="14" align="absmiddle" /> Compose · Activity Monitor · Settings · Menu bar</b></summary>
+<br />
+
+<div align="center">
+<img src="docs/img/screenshot-08.png" alt="Compose" width="900" />
+<br /><sub><b>Compose</b> — current compose file, services with mapped ports, Up/Down, and a logs panel.</sub>
+</div>
+
+<br />
+
+<div align="center">
+<img src="docs/img/screenshot-09.png" alt="Activity Monitor" width="900" />
+<br /><sub><b>Activity Monitor</b> — aggregate CPU/Memory/Containers/Network cards plus per-container usage.</sub>
+</div>
+
+<br />
+
+<div align="center">
+<img src="docs/img/screenshot-11.png" alt="Settings General" width="900" />
+<br /><sub><b>Settings · General</b> — polling, launch at login, menu bar toggle, version, and install actions.</sub>
+</div>
+
+<br />
+
+<div align="center">
+<img src="docs/img/screenshot-12.png" alt="Settings Storage" width="900" />
+<br /><sub><b>Settings · Storage</b> — disk usage breakdown and cleanup actions.</sub>
+</div>
+
+<br />
+
+<div align="center">
+<img src="docs/img/screenshot-13.png" alt="Settings Menu bar" width="900" />
+<br /><sub><b>Settings · Menu bar</b> — visibility toggle, container list size, and metric customization.</sub>
+</div>
+
+<br />
+
+<div align="center">
+<img src="docs/img/screenshot-14.png" alt="Menu bar extra" width="900" />
+<br /><sub><b>Menu bar extra</b> — CPU/memory rings, per-project quick actions, and the Macker dropdown.</sub>
+</div>
+</details>
+
+---
+
+<!-- Octicon "sparkles" — Features -->
+<img src="https://raw.githubusercontent.com/primer/octicons/main/icons/zap-16.svg" width="22" align="absmiddle" /> **Features**
+
+<table>
+<thead>
+<tr>
+<th width="33%"><img src="https://raw.githubusercontent.com/primer/octicons/main/icons/device-desktop-16.svg" width="16" align="absmiddle" /> Native GUI</th>
+<th width="33%"><img src="https://raw.githubusercontent.com/primer/octicons/main/icons/terminal-16.svg" width="16" align="absmiddle" /> Docker-compatible CLI</th>
+<th width="33%"><img src="https://raw.githubusercontent.com/primer/octicons/main/icons/package-16.svg" width="16" align="absmiddle" /> Custom Compose engine</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SwiftUI app — Dashboard, Containers, Images, Builds, Volumes, Networks, Compose, Activity Monitor, Settings.</td>
+<td>One binary, two modes. Symlink it as <code>docker</code> and <code>docker-compose</code> for drop-in compatibility.</td>
+<td>YAML parser, <code>${VAR}</code> interpolation, <code>.env</code> support, topological <code>depends_on</code> with <code>service_healthy</code> gating.</td>
+</tr>
+<tr>
+<th><img src="https://raw.githubusercontent.com/primer/octicons/main/icons/sync-16.svg" width="16" align="absmiddle" /> Hot reload</th>
+<th><img src="https://raw.githubusercontent.com/primer/octicons/main/icons/graph-16.svg" width="16" align="absmiddle" /> Menu bar extra</th>
+<th><img src="https://raw.githubusercontent.com/primer/octicons/main/icons/trash-16.svg" width="16" align="absmiddle" /> Storage management</th>
+</tr>
+<tr>
+<td>FSEvents → synthetic inotify bridge so Vite/webpack/nodemon rebuild on host edits over virtiofs.</td>
+<td>CPU/memory rings, per-container quick actions, and customizable metrics.</td>
+<td>Prune images, delete the buildkit builder, full cleanup — from GUI or CLI.</td>
+</tr>
+</tbody>
+</table>
+
+---
+
+<!-- Octicon "workflow" — How it works -->
+<img src="https://raw.githubusercontent.com/primer/octicons/main/icons/workflow-16.svg" width="22" align="absmiddle" /> **How it works**
+
+`apple/container` exposes a private XPC API (`container-apiserver`). Macker
+talks to it through a lightweight XPC client — **no gRPC, no NIO, no daemon of
+its own**. Operations that have no XPC route (image build, pull, push, tag,
+prune) fall back to the `container` CLI.
 
 The single `macker` binary dispatches on its arguments:
 
-- **No arguments** → launches the SwiftUI GUI.
-- **With arguments** → runs the headless CLI (ArgumentParser).
+| Invocation | Mode |
+|------------|------|
+| `macker` | Launches the SwiftUI GUI |
+| `macker <args>` | Runs the headless CLI (`ArgumentParser`) |
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                   PRESENTATION LAYER                        │
+│   Views (SwiftUI)  ←  AppState (@Observable)                │
+├─────────────────────────────────────────────────────────────┤
+│                    SERVICE LAYER                            │
+│   AppState (polling, state aggregation)                     │
+│   ContainerService | ComposeEngine | HotReloadService       │
+├─────────────────────────────────────────────────────────────┤
+│                    BACKEND LAYER                            │
+│   XPCClient (primary) | ProcessRunner (fallback)            │
+│   LaunchdManager (daemon lifecycle)                         │
+├─────────────────────────────────────────────────────────────┤
+│                   PLATFORM LAYER                            │
+│   container-apiserver (XPC) | container CLI | virtiofs/VZ   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+<img src="https://raw.githubusercontent.com/primer/octicons/main/icons/book-16.svg" width="14" align="absmiddle" /> Read the full module map in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ---
 
-## Requirements
+<!-- Octicon "checklist" — Requirements -->
+<img src="https://raw.githubusercontent.com/primer/octicons/main/icons/checklist-16.svg" width="22" align="absmiddle" /> **Requirements**
 
-- **macOS 15+** (Sequoia or later)
-- **Apple Silicon** (arm64)
-- [apple/container](https://github.com/apple/container) installed and running
-  (`container-apiserver`). The protocol version is pinned to **1.2.2** in
-  `Package.swift` — client and runtime ship in lockstep.
+| | |
+|---|---|
+| **macOS** | 15+ (Sequoia or later) |
+| **CPU** | Apple Silicon (arm64) |
+| **Runtime** | [`apple/container`](https://github.com/apple/container) installed and running (`container-apiserver`) |
+| **XPC protocol** | pinned to **1.2.2** in `Package.swift` — client and runtime ship in lockstep |
 
 ---
 
-## Installation
+<!-- Octicon "rocket" — Install -->
+<img src="https://raw.githubusercontent.com/primer/octicons/main/icons/rocket-16.svg" width="22" align="absmiddle" /> **Install**
 
 ### Option A — Homebrew (recommended)
 
-```bash
-brew install --cask djpfs/tools/macker
-```
+<img src="https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/homebrew.svg" width="14" align="absmiddle" /> `brew install --cask djpfs/tools/macker`
 
 Installs the `Macker.app` bundle into `/Applications` (Launchpad/Spotlight
 discoverable). The cask lives in the
@@ -91,9 +273,7 @@ ln -s /Applications/Macker.app/Contents/MacOS/macker /usr/local/bin/docker-compo
 
 ### Option B — Install the CLI to your PATH
 
-```bash
-make install
-```
+<img src="https://raw.githubusercontent.com/primer/octicons/main/icons/gear-16.svg" width="14" align="absmiddle" /> `make install`
 
 This installs `/usr/local/bin/macker`. To use it as a drop-in `docker`
 replacement:
@@ -103,12 +283,12 @@ ln -s /usr/local/bin/macker /usr/local/bin/docker
 ln -s /usr/local/bin/macker /usr/local/bin/docker-compose
 ```
 
-> The GUI also has a **Settings → Install CLI** button that does the same thing
-> (with an administrator password prompt).
+> <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/light-bulb-16.svg" width="14" align="absmiddle" /> The GUI also has a **Settings → Install CLI** button that does the same
+> thing (with an administrator password prompt).
 
 ### Option C — Install the app bundle
 
-Build a `.pkg` installer and install it into `/Applications`:
+<img src="https://raw.githubusercontent.com/primer/octicons/main/icons/package-16.svg" width="14" align="absmiddle" /> Build a `.pkg` installer and install it into `/Applications`:
 
 ```bash
 ./Scripts/build-pkg.sh 1.0.0
@@ -116,21 +296,24 @@ open dist/Macker-1.0.0.pkg
 ```
 
 Or, from the GUI, use **Settings → Install app in /Applications** to copy the
-app bundle into `/Applications` (Launchpad/Spotlight discoverable).
+app bundle into `/Applications`.
 
 ### Option D — Build from source
 
+<img src="https://raw.githubusercontent.com/primer/octicons/main/icons/tools-16.svg" width="14" align="absmiddle" /> Clone and build:
+
 ```bash
-git clone https://github.com/<you>/macker.git
+git clone https://github.com/djpfs/macker.git
 cd macker
 make build          # debug build
 ```
 
 ---
 
-## Usage
+<!-- Octicon "monitor" — Usage -->
+<img src="https://raw.githubusercontent.com/primer/octicons/main/icons/device-desktop-16.svg" width="22" align="absmiddle" /> **Usage**
 
-### GUI
+### <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/device-desktop-16.svg" width="14" align="absmiddle" /> GUI
 
 ```bash
 macker
@@ -138,21 +321,16 @@ macker
 
 The GUI provides:
 
-- **Dashboard** — resource cards, daemon status, and CPU/memory/I/O charts with
-  configurable time intervals.
-- **Containers** — list with search, start/stop/restart, and a detail pane with
-  Info / Stats / Logs / Terminal / Files / Settings tabs.
-- **Images** — list, pull, and delete (with confirmation).
-- **Builds** — build history, build an image from a context, retry failed
-  builds, copy the build command, and prune the build cache.
-- **Volumes / Networks** — create, inspect, and delete.
-- **Compose** — load compose files (including drag & drop), up/down, logs, and
-  per-project actions.
-- **Activity Monitor** — per-container resource usage.
-- **Settings** — menu bar customization, storage cleanup, install CLI/app,
-  launch at login, and more.
+- <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/stack-16.svg" width="12" align="absmiddle" /> **Dashboard** — resource cards, daemon status, and CPU/memory/I/O charts with configurable time intervals.
+- <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/container-16.svg" width="12" align="absmiddle" /> **Containers** — list with search, start/stop/restart, and a detail pane with Info / Stats / Logs / Terminal / Files / Settings tabs.
+- <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/file-16.svg" width="12" align="absmiddle" /> **Images** — list, pull, and delete (with confirmation).
+- <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/tools-16.svg" width="12" align="absmiddle" /> **Builds** — build history, build an image from a context, retry failed builds, copy the build command, and prune the build cache.
+- <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/database-16.svg" width="12" align="absmiddle" /> **Volumes / Networks** — create, inspect, and delete.
+- <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/package-16.svg" width="12" align="absmiddle" /> **Compose** — load compose files (including drag & drop), up/down, logs, and per-project actions.
+- <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/graph-16.svg" width="12" align="absmiddle" /> **Activity Monitor** — per-container resource usage.
+- <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/gear-16.svg" width="12" align="absmiddle" /> **Settings** — menu bar customization, storage cleanup, install CLI/app, launch at login, and more.
 
-### CLI
+### <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/terminal-16.svg" width="14" align="absmiddle" /> CLI
 
 ```bash
 docker version
@@ -162,7 +340,7 @@ docker ps
 docker compose up -d
 ```
 
-### Docker compatibility
+### <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/sync-16.svg" width="14" align="absmiddle" /> Docker compatibility
 
 Because the binary is meant to be symlinked as `docker`, unknown top-level
 subcommands are transparently routed to the docker shim. So these are
@@ -173,37 +351,72 @@ docker ps
 macker ps
 ```
 
----
-
-## Screenshots
-
-![Dashboard — runtime status, resource cards (containers running/total, images, volumes, networks), CPU/Memory/Block I/O charts, and the active containers table](docs/img/screenshot-01.png)
-![Containers — search and filter sidebar with running containers grouped by compose project (propedido-api)](docs/img/screenshot-02.png)
-![Container detail — Info tab showing configuration (ID, image, status, created), published ports, mounts, and compose labels](docs/img/screenshot-03.png)
-![Images — repository, tag, ID, size, created date, and platform columns with a pull action](docs/img/screenshot-04.png)
-![Builds — empty state with Build and Prune cache actions, shown when there are no builds yet](docs/img/screenshot-05.png)
-![Volumes — name, driver, format, size, and created columns](docs/img/screenshot-06.png)
-![Networks — name, mode, subnet, and plugin columns](docs/img/screenshot-07.png)
-![Compose — current compose file, list of services with mapped ports, Up/Down actions, and a logs panel](docs/img/screenshot-08.png)
-![Activity Monitor — aggregate CPU, Memory, Containers, and Network cards plus a per-container usage table](docs/img/screenshot-09.png)
-![Container detail — Settings tab with networks, published ports, resource limits (memory/CPU), environment variables, and labels](docs/img/screenshot-10.png)
-![Settings — General tab with polling interval, launch at login, menu bar toggle, version info, and install actions](docs/img/screenshot-11.png)
-![Settings — Storage tab with disk usage breakdown and cleanup actions (prune unused images, prune all images, delete buildkit builder, full cleanup)](docs/img/screenshot-12.png)
-![Settings — Menu bar tab with visibility toggle, container list size, and Available/Active items to customize menu bar metrics](docs/img/screenshot-13.png)
-![Menu bar extra — CPU/memory rings, per-project and per-container quick actions, and the Macker dropdown with Open Macker and an actions menu](docs/img/screenshot-14.png)
-
-## Documentation
-
-- [Architecture](docs/ARCHITECTURE.md) — layers, modules, and how they fit together.
-- [Supported commands](docs/COMMANDS.md) — full `docker` and `docker compose` reference.
-- [Compose engine & hot reload](docs/COMPOSE-ENGINE.md) — how `docker compose up` works and the virtiofs inotify bridge.
-- [GUI features](docs/GUI.md) — menu bar and storage & cleanup.
-- [Security](docs/SECURITY.md) — security policy and notes.
-- [Contributing](docs/CONTRIBUTING.md) — development setup, code style, testing, releasing.
-- [Roadmap & limitations](docs/ROADMAP.md) — known limitations and planned improvements.
+<img src="https://raw.githubusercontent.com/primer/octicons/main/icons/book-16.svg" width="14" align="absmiddle" /> Full command reference — see [docs/COMMANDS.md](docs/COMMANDS.md).
 
 ---
 
-## License
+<!-- Octicon "book" — Documentation -->
+<img src="https://raw.githubusercontent.com/primer/octicons/main/icons/book-16.svg" width="22" align="absmiddle" /> **Documentation**
+
+| | |
+|---|---|
+| <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/workflow-16.svg" width="14" align="absmiddle" /> [Architecture](docs/ARCHITECTURE.md) | Layers, modules, and how they fit together |
+| <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/terminal-16.svg" width="14" align="absmiddle" /> [Supported commands](docs/COMMANDS.md) | Full `docker` and `docker compose` reference |
+| <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/package-16.svg" width="14" align="absmiddle" /> [Compose engine &amp; hot reload](docs/COMPOSE-ENGINE.md) | How `docker compose up` works and the virtiofs inotify bridge |
+| <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/device-desktop-16.svg" width="14" align="absmiddle" /> [GUI features](docs/GUI.md) | Menu bar and storage &amp; cleanup |
+| <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/shield-lock-16.svg" width="14" align="absmiddle" /> [Security](docs/SECURITY.md) | Security policy and notes |
+| <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/heart-16.svg" width="14" align="absmiddle" /> [Contributing](docs/CONTRIBUTING.md) | Development setup, code style, testing, releasing |
+| <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/rocket-16.svg" width="14" align="absmiddle" /> [Roadmap &amp; limitations](docs/ROADMAP.md) | Known limitations and planned improvements |
+
+---
+
+<!-- Octicon "shield-lock" — Security -->
+<img src="https://raw.githubusercontent.com/primer/octicons/main/icons/shield-lock-16.svg" width="22" align="absmiddle" /> **Security**
+
+- **Privilege escalation**: the Settings "Install CLI" and "Install app in
+  /Applications" actions run `osascript` with administrator privileges. These
+  are **user-initiated** and only copy the app's own binary into standard
+  locations. See [SECURITY.md](docs/SECURITY.md).
+- **No secrets**: the project contains no hardcoded credentials, API keys, or
+  tokens. Do not commit `.env` files or `firebase-adminsdk-*.json`.
+- **Shell safety**: subprocesses are launched with argument arrays (not shell
+  string interpolation), so command arguments are not shell-injected.
+
+---
+
+<!-- Octicon "heart" — Contributing -->
+<img src="https://raw.githubusercontent.com/primer/octicons/main/icons/heart-16.svg" width="22" align="absmiddle" /> **Contributing**
+
+Contributions are welcome — bug reports, feature requests, docs, and pull
+requests.
+
+```bash
+make build          # debug build
+make test           # unit tests (needs full Xcode)
+make release        # release build
+make lint           # swift-format (if installed)
+make guest-agent    # cross-compile the hot-reload agent
+make clean          # remove build artifacts
+```
+
+Tests run in CI on macOS with full Xcode (XCTest is not shipped with
+CommandLineTools). The XPC protocol is not a stable public API — client and
+`container-apiserver` ship in lockstep; bump `containerVersion` in
+`Package.swift` when updating the runtime.
+
+<img src="https://raw.githubusercontent.com/primer/octicons/main/icons/book-16.svg" width="14" align="absmiddle" /> Full guide — see [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
+
+---
+
+<!-- Octicon "law" — License -->
+<img src="https://raw.githubusercontent.com/primer/octicons/main/icons/law-16.svg" width="22" align="absmiddle" /> **License**
+
+<div align="center">
 
 [MIT](LICENSE) © 2026 macker contributors
+
+<br />
+
+<sub>Made for the Apple Silicon crowd that just wants containers to work.</sub>
+
+</div>
