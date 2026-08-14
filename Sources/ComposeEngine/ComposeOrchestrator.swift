@@ -90,6 +90,23 @@ public struct ComposeOrchestrator: Sendable {
         "\(sanitize(project))_\(sanitize(network))"
     }
 
+    /// The runtime network name for a compose network reference.
+    static func runtimeNetworkName(project: ComposeProject, network: String) -> String {
+        if network == "default" {
+            return ContainerAPIClient.defaultNetworkName
+        }
+        // If the network wasn't declared, keep the raw key as a best-effort
+        // runtime name (validation normally rejects undeclared networks).
+        guard let config = project.networks[network] else { return network }
+        if let explicitName = config.name, !explicitName.isEmpty {
+            return explicitName
+        }
+        if config.external {
+            return network
+        }
+        return Self.networkName(project: project.name, network: network)
+    }
+
     /// The platform volume name for a compose volume.
     public static func volumeName(project: String, volume: String) -> String {
         "\(sanitize(project))_\(sanitize(volume))"
@@ -158,6 +175,10 @@ public struct ComposeOrchestrator: Sendable {
         // 2. Create the project's named volumes.
         progress?.yield("Creating volumes...")
         try await ensureVolumes(project)
+
+        // 2b. Create the project's internal networks.
+        progress?.yield("Creating networks...")
+        try await ensureNetworks(project)
 
         // 3. Create containers in dependency order, recreating any whose
         //    config hash changed since the last `up`.
@@ -555,7 +576,7 @@ public struct ComposeOrchestrator: Sendable {
         }
     }
 
-    /// Inspect the network connections for every running service in the project.
+    /// Inspect the network connections for every service in the project.
     ///
     /// Returns one ``ServiceConnections`` entry per service that has a container
     /// (running or stopped). Services whose containers do not exist yet are
@@ -766,15 +787,18 @@ public struct ComposeOrchestrator: Sendable {
             labels[ComposeLabel.configHash] = configHash
         }
 
-        // Networks: attach to the platform's default network with a unique
-        // hostname (the server rejects empty/duplicate hostnames). The MTU
-        // must be set explicitly: the CLI defaults to 1280, and omitting it
-        // makes bootstrap fail with EOPNOTSUPP.
+        // Networks: attach to configured compose networks, or the platform's
+        // default network when none are configured. Hostnames must be unique
+        // and non-empty, and MTU must be set explicitly to avoid EOPNOTSUPP.
         let hostname = service.hostname ?? containerName
-        let networks = [AttachmentConfiguration(
-            network: ContainerAPIClient.defaultNetworkName,
-            options: AttachmentOptions(hostname: hostname, mtu: 1280)
-        )]
+        let configuredNetworks = service.networks.isEmpty ? ["default"] : service.networks
+        let networks = configuredNetworks.enumerated().map { index, network in
+            let attachmentHostname = index == 0 ? hostname : "\(hostname)-\(Self.sanitize(network))"
+            AttachmentConfiguration(
+                network: Self.runtimeNetworkName(project: project, network: network),
+                options: AttachmentOptions(hostname: attachmentHostname, mtu: 1280)
+            )
+        }
 
         return ContainerConfiguration(
             id: containerName,
@@ -853,6 +877,40 @@ public struct ComposeOrchestrator: Sendable {
             if !existingNames.contains(platformName) {
                 _ = try await service.createVolume(name: platformName)
             }
+        }
+    }
+
+    /// Create the project's internal networks that don't exist yet.
+    private func ensureNetworks(_ project: ComposeProject) async throws {
+        let existing = try await service.listNetworks()
+        let existingNames = Set(existing.map(\.name))
+        for (name, config) in project.networks where !config.external {
+            let runtimeName = Self.runtimeNetworkName(project: project, network: name)
+            if existingNames.contains(runtimeName) {
+                continue
+            }
+
+            let primaryPool = config.ipam?.config.first
+            var options: [String: String] = [:]
+            if let ipRange = primaryPool?.ipRange {
+                options["ip_range"] = ipRange
+            }
+            if let gateway = primaryPool?.gateway {
+                options["gateway"] = gateway
+            }
+            if let ipamDriver = config.ipam?.driver {
+                options["ipam_driver"] = ipamDriver
+            }
+            // The backend network model has a first-class subnet field only;
+            // gateway/ip_range are passed through plugin options.
+
+            let configuration = NetworkConfiguration(
+                name: runtimeName,
+                ipv4Subnet: primaryPool?.subnet,
+                plugin: config.driver ?? "vmnet",
+                options: options
+            )
+            _ = try await service.createNetwork(configuration: configuration)
         }
     }
 

@@ -456,4 +456,38 @@ final class ComposeEngineTests: XCTestCase {
         XCTAssertTrue(shared.external)
         XCTAssertEqual(shared.name, "my-shared-network")
     }
+
+    func testRuntimeNetworkNameUsesInternalComposeName() throws {
+        let yaml = """
+        name: netproj
+        networks:
+          backend:
+            ipam:
+              config:
+                - subnet: "172.28.0.0/16"
+        services:
+          app:
+            image: nginx
+            networks:
+              - backend
+        """
+        let project = try ComposeParser().parse(yaml: yaml)
+        XCTAssertEqual(ComposeOrchestrator.runtimeNetworkName(project: project, network: "backend"), "netproj_backend")
+    }
+
+    func testRuntimeNetworkNameUsesExplicitExternalName() throws {
+        let yaml = """
+        networks:
+          shared:
+            external: true
+            name: my-shared-network
+        services:
+          app:
+            image: nginx
+            networks:
+              - shared
+        """
+        let project = try ComposeParser().parse(yaml: yaml)
+        XCTAssertEqual(ComposeOrchestrator.runtimeNetworkName(project: project, network: "shared"), "my-shared-network")
+    }
 }
