@@ -364,6 +364,9 @@ macker ps
   locations. See [SECURITY.md](docs/SECURITY.md).
 - **No secrets**: the project contains no hardcoded credentials, API keys, or
   tokens. Do not commit `.env` files or `firebase-adminsdk-*.json`.
+- **Keychain-backed secrets**: runtime secrets can be managed with
+  `docker secret ...` and referenced as `keychain://SECRET_NAME` in
+  `KEY=VALUE` environment entries.
 - **Shell safety**: subprocesses are launched with argument arrays (not shell
   string interpolation), so command arguments are not shell-injected.
 

@@ -677,7 +677,7 @@ public struct ComposeOrchestrator: Sendable {
         for (key, value) in service.environment {
             env.append("\(key)=\(value)")
         }
-        process.environment = Self.deduplicateEnv(env)
+        process.environment = try self.service.secrets.resolveEnvironment(Self.deduplicateEnv(env))
 
         // Mounts: named volumes, bind mounts, tmpfs.
         var mounts: [Filesystem] = []
@@ -746,10 +746,12 @@ public struct ComposeOrchestrator: Sendable {
             networks: networks,
             dns: service.dns.isEmpty ? nil : .init(nameservers: service.dns),
             resources: resources,
+            privileged: service.privileged,
             readOnly: service.readOnly,
             useInit: service.initEnabled,
             capAdd: service.capAdd,
             capDrop: service.capDrop,
+            securityOptions: service.securityOpt,
             shmSize: service.shmSize.flatMap(Self.parseMemory),
             stopSignal: service.stopSignal
         )

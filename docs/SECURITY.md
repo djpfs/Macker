@@ -27,5 +27,12 @@ possible.
 - **No secrets**: the project contains no hardcoded credentials, API keys, or
   tokens. Do not commit `.env` files, `firebase-adminsdk-*.json`, or similar
   secrets.
+- **Secret handling**: user-managed secrets are stored in the macOS Keychain
+  (`docker secret create/ls/inspect/rm`) and can be referenced with
+  `keychain://SECRET_NAME` in container environment entries.
+- **Image scanning**: `docker scan IMAGE` uses Trivy output to surface known
+  vulnerabilities by severity.
+- **Action audit trail**: runtime and CLI actions are appended to
+  `~/.macker/audit.jsonl`.
 - **Shell safety**: subprocesses are launched with argument arrays (not shell
   string interpolation), so command arguments are not shell-injected.

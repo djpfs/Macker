@@ -84,21 +84,29 @@ public struct ContainerService: ContainerServiceProtocol, Sendable {
     public let daemon: LaunchdManager
     /// Runtime install resolution.
     public let platform: PlatformResolver
+    /// Keychain-backed secret storage.
+    public let secrets: KeychainSecretStore
     /// CLI fallback runner for operations without an XPC route.
     private let runner: ProcessRunner
+    /// Persistent action audit log.
+    private let auditLogger: AuditLogger
 
     public init(
         client: ContainerAPIClient = ContainerAPIClient(),
         images: ImageService = ImageService(),
         daemon: LaunchdManager = LaunchdManager(),
         platform: PlatformResolver = PlatformResolver(),
-        runner: ProcessRunner = ProcessRunner()
+        runner: ProcessRunner = ProcessRunner(),
+        secrets: KeychainSecretStore = KeychainSecretStore(),
+        auditLogger: AuditLogger = AuditLogger()
     ) {
         self.client = client
         self.images = images
         self.daemon = daemon
         self.platform = platform
         self.runner = runner
+        self.secrets = secrets
+        self.auditLogger = auditLogger
     }
 
     // MARK: Containers
@@ -118,13 +126,19 @@ public struct ContainerService: ContainerServiceProtocol, Sendable {
         initImage: String? = nil,
         runtimeData: Data? = nil
     ) async throws {
-        try await client.create(
-            configuration: configuration,
-            options: options,
-            kernel: kernel,
-            initImage: initImage,
-            runtimeData: runtimeData
-        )
+        do {
+            try await client.create(
+                configuration: configuration,
+                options: options,
+                kernel: kernel,
+                initImage: initImage,
+                runtimeData: runtimeData
+            )
+            await auditLogger.record(action: "container.create", target: configuration.id, succeeded: true)
+        } catch {
+            await auditLogger.record(action: "container.create", target: configuration.id, succeeded: false, detail: error.localizedDescription)
+            throw error
+        }
     }
 
     public func bootstrapContainer(id: String, stdio: [FileHandle?] = [], dynamicEnv: [String: String] = [:]) async throws {
@@ -132,7 +146,13 @@ public struct ContainerService: ContainerServiceProtocol, Sendable {
     }
 
     public func startProcess(containerId: String, processId: String) async throws {
-        try await client.startProcess(containerId: containerId, processId: processId)
+        do {
+            try await client.startProcess(containerId: containerId, processId: processId)
+            await auditLogger.record(action: "container.start", target: containerId, succeeded: true)
+        } catch {
+            await auditLogger.record(action: "container.start", target: containerId, succeeded: false, detail: error.localizedDescription)
+            throw error
+        }
     }
 
     public func waitForProcess(containerId: String, processId: String) async throws -> Int32 {
@@ -140,15 +160,33 @@ public struct ContainerService: ContainerServiceProtocol, Sendable {
     }
 
     public func killContainer(id: String, signal: String = "SIGTERM") async throws {
-        try await client.kill(id: id, signal: signal)
+        do {
+            try await client.kill(id: id, signal: signal)
+            await auditLogger.record(action: "container.kill", target: id, succeeded: true)
+        } catch {
+            await auditLogger.record(action: "container.kill", target: id, succeeded: false, detail: error.localizedDescription)
+            throw error
+        }
     }
 
     public func stopContainer(id: String, opts: ContainerStopOptions = .default) async throws {
-        try await client.stop(id: id, opts: opts)
+        do {
+            try await client.stop(id: id, opts: opts)
+            await auditLogger.record(action: "container.stop", target: id, succeeded: true)
+        } catch {
+            await auditLogger.record(action: "container.stop", target: id, succeeded: false, detail: error.localizedDescription)
+            throw error
+        }
     }
 
     public func deleteContainer(id: String, force: Bool = false) async throws {
-        try await client.delete(id: id, force: force)
+        do {
+            try await client.delete(id: id, force: force)
+            await auditLogger.record(action: "container.delete", target: id, succeeded: true)
+        } catch {
+            await auditLogger.record(action: "container.delete", target: id, succeeded: false, detail: error.localizedDescription)
+            throw error
+        }
     }
 
     public func containerDiskUsage(id: String) async throws -> UInt64 {
@@ -196,7 +234,14 @@ public struct ContainerService: ContainerServiceProtocol, Sendable {
     // MARK: Networks
 
     public func createNetwork(configuration: NetworkConfiguration) async throws -> NetworkResource {
-        try await client.networkCreate(configuration: configuration)
+        do {
+            let network = try await client.networkCreate(configuration: configuration)
+            await auditLogger.record(action: "network.create", target: configuration.id, succeeded: true)
+            return network
+        } catch {
+            await auditLogger.record(action: "network.create", target: configuration.id, succeeded: false, detail: error.localizedDescription)
+            throw error
+        }
     }
 
     public func listNetworks() async throws -> [NetworkResource] {
@@ -204,7 +249,13 @@ public struct ContainerService: ContainerServiceProtocol, Sendable {
     }
 
     public func deleteNetwork(id: String) async throws {
-        try await client.networkDelete(id: id)
+        do {
+            try await client.networkDelete(id: id)
+            await auditLogger.record(action: "network.delete", target: id, succeeded: true)
+        } catch {
+            await auditLogger.record(action: "network.delete", target: id, succeeded: false, detail: error.localizedDescription)
+            throw error
+        }
     }
 
     // MARK: Volumes
@@ -215,11 +266,24 @@ public struct ContainerService: ContainerServiceProtocol, Sendable {
         driverOpts: [String: String] = [:],
         labels: [String: String] = [:]
     ) async throws -> VolumeConfiguration {
-        try await client.volumeCreate(name: name, driver: driver, driverOpts: driverOpts, labels: labels)
+        do {
+            let volume = try await client.volumeCreate(name: name, driver: driver, driverOpts: driverOpts, labels: labels)
+            await auditLogger.record(action: "volume.create", target: name, succeeded: true)
+            return volume
+        } catch {
+            await auditLogger.record(action: "volume.create", target: name, succeeded: false, detail: error.localizedDescription)
+            throw error
+        }
     }
 
     public func deleteVolume(name: String) async throws {
-        try await client.volumeDelete(name: name)
+        do {
+            try await client.volumeDelete(name: name)
+            await auditLogger.record(action: "volume.delete", target: name, succeeded: true)
+        } catch {
+            await auditLogger.record(action: "volume.delete", target: name, succeeded: false, detail: error.localizedDescription)
+            throw error
+        }
     }
 
     public func listVolumes() async throws -> [VolumeConfiguration] {
@@ -297,6 +361,7 @@ public struct ContainerService: ContainerServiceProtocol, Sendable {
         if let builder = containers.first(where: { $0.id == "buildkit" }) {
             try await deleteContainer(id: builder.id, force: true)
         }
+        await auditLogger.record(action: "cleanup.deleteBuildkitBuilder", target: "buildkit", succeeded: true)
     }
 
     /// Build an image from a context directory via the `container build` CLI.
@@ -308,16 +373,22 @@ public struct ContainerService: ContainerServiceProtocol, Sendable {
         buildArgs: [String: String],
         noCache: Bool
     ) async throws -> String {
-        var args = ["build", "--progress", "plain"]
-        if let tag, !tag.isEmpty { args += ["-t", tag] }
-        if let dockerfile, !dockerfile.isEmpty { args += ["-f", dockerfile] }
-        for (key, value) in buildArgs { args += ["--build-arg", "\(key)=\(value)"] }
-        if noCache { args += ["--no-cache"] }
-        args.append(context)
-        let result = try await runner.run(args, timeout: .seconds(1800))
-        if !result.stdout.isEmpty { return result.stdout }
-        if !result.stderr.isEmpty { return result.stderr }
-        return ""
+        do {
+            var args = ["build", "--progress", "plain"]
+            if let tag, !tag.isEmpty { args += ["-t", tag] }
+            if let dockerfile, !dockerfile.isEmpty { args += ["-f", dockerfile] }
+            for (key, value) in buildArgs { args += ["--build-arg", "\(key)=\(value)"] }
+            if noCache { args += ["--no-cache"] }
+            args.append(context)
+            let result = try await runner.run(args, timeout: .seconds(1800))
+            await auditLogger.record(action: "image.build", target: tag ?? context, succeeded: true)
+            if !result.stdout.isEmpty { return result.stdout }
+            if !result.stderr.isEmpty { return result.stderr }
+            return ""
+        } catch {
+            await auditLogger.record(action: "image.build", target: tag ?? context, succeeded: false, detail: error.localizedDescription)
+            throw error
+        }
     }
 
     public func close() {

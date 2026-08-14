@@ -344,4 +344,22 @@ final class ComposeEngineTests: XCTestCase {
         let web = try XCTUnwrap(project.services["web"])
         XCTAssertEqual(web.ports, ["8080:80"])
     }
+
+    func testSecurityOptionsAndPrivilegeParsing() throws {
+        let yaml = """
+        services:
+          web:
+            image: nginx
+            privileged: true
+            cap_add:
+              - SYS_ADMIN
+            security_opt:
+              - seccomp=unconfined
+        """
+        let project = try ComposeParser().parse(yaml: yaml)
+        let web = try XCTUnwrap(project.services["web"])
+        XCTAssertTrue(web.privileged)
+        XCTAssertEqual(web.capAdd, ["SYS_ADMIN"])
+        XCTAssertEqual(web.securityOpt, ["seccomp=unconfined"])
+    }
 }
