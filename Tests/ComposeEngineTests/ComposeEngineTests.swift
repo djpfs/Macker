@@ -49,6 +49,30 @@ final class ComposeEngineTests: XCTestCase {
         XCTAssertEqual(project.services["web"]?.configs, ["app_config"])
     }
 
+    func testUndefinedSecretThrowsError() throws {
+        let yaml = """
+        services:
+          web:
+            image: nginx
+            secrets: [nonexistent_secret]
+        """
+        XCTAssertThrowsError(try ComposeParser().parse(yaml: yaml)) { error in
+            XCTAssertEqual(error as? ComposeParseError, .unknownSecret("web", "nonexistent_secret"))
+        }
+    }
+
+    func testUndefinedConfigThrowsError() throws {
+        let yaml = """
+        services:
+          web:
+            image: nginx
+            configs: [nonexistent_config]
+        """
+        XCTAssertThrowsError(try ComposeParser().parse(yaml: yaml)) { error in
+            XCTAssertEqual(error as? ComposeParseError, .unknownConfig("web", "nonexistent_config"))
+        }
+    }
+
     func testParseDefaultsNameToDirectory() throws {
         let yaml = """
         services:

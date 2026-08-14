@@ -81,7 +81,9 @@ public struct ServiceConfig: Sendable, Codable, Equatable {
     public var expose: [String]
     /// Volume mounts, e.g. `"./html:/usr/share/nginx/html:ro"`.
     public var volumes: [String]
+    /// Named secrets referenced by this service.
     public var secrets: [String]
+    /// Named configs referenced by this service.
     public var configs: [String]
     /// Networks this service joins.
     public var networks: [String]

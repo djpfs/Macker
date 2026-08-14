@@ -93,8 +93,10 @@ public struct ProcessRunner: Sendable {
 
         try process.run()
         if let standardInput, let stdinPipe {
-            stdinPipe.fileHandleForWriting.write(standardInput)
-            stdinPipe.fileHandleForWriting.closeFile()
+            Task.detached {
+                stdinPipe.fileHandleForWriting.write(standardInput)
+                stdinPipe.fileHandleForWriting.closeFile()
+            }
         }
 
         let deadline = ContinuousClock.now + timeout

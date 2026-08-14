@@ -86,31 +86,50 @@ public struct ImageService: Sendable {
 
     /// Authenticate to an OCI registry without exposing the password in args.
     public func login(registry: String, username: String, password: String) async throws {
-            let result = try await runner.run(
-                ["registry", "login", "--username", username, "--password-stdin", registry],
-                standardInput: Data((password + "\n").utf8), timeout: .seconds(60)
+        let result = try await runner.run(
+            ["registry", "login", "--username", username, "--password-stdin", registry],
+            standardInput: Data((password + "\n").utf8),
+            timeout: .seconds(60)
+        )
+        guard result.succeeded else {
+            throw BackendError.operationFailed(
+                "registry login failed: \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))"
             )
-            guard result.succeeded else {
-                throw BackendError.operationFailed("registry login failed: \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))")
-    }
         }
+    }
 
-        /// Build an image from a Dockerfile or Containerfile.
-    public func build(context: String, tag: String? = nil, dockerfile: String? = nil,
-                          buildArgs: [String: String] = [:], noCache: Bool = false) async throws -> String {
-            var args = ["build", "--progress", "plain"]
-            if let tag, !tag.isEmpty { args += ["-t", tag] }
-            if let dockerfile, !dockerfile.isEmpty { args += ["-f", dockerfile] }
-            for (key, value) in buildArgs.sorted(by: { $0.key < $1.key }) {
-                args += ["--build-arg", "\(key)=\(value)"]
-            }
-            if noCache { args.append("--no-cache") }
-            args.append(context)
-            let result = try await runner.run(args, timeout: .seconds(1800))
-            guard result.succeeded else {
-                throw BackendError.operationFailed("image build failed: \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))")
-            }
-            return result.stdout.isEmpty ? result.stderr : result.stdout
+    /// Build an image from a Dockerfile or Containerfile.
+    ///
+    /// - Parameters:
+    ///   - context: Path to the build context directory.
+    ///   - dockerfile: Optional path to a Dockerfile/Containerfile.
+    ///   - tags: Image tags to apply, e.g. `["registry.example.com/app:latest"]`.
+    ///   - buildArgs: Build-time variables passed as `--build-arg KEY=VALUE`.
+    ///   - useCache: When `false`, passes `--no-cache` to disable layer caching.
+    /// - Returns: Combined CLI output (stdout preferred, stderr as fallback).
+    @discardableResult
+    public func build(
+        context: String,
+        dockerfile: String? = nil,
+        tags: [String] = [],
+        buildArgs: [String: String] = [:],
+        useCache: Bool = true
+    ) async throws -> String {
+        var args = ["build", "--progress", "plain"]
+        for tag in tags { args += ["-t", tag] }
+        if let dockerfile, !dockerfile.isEmpty { args += ["-f", dockerfile] }
+        for (key, value) in buildArgs.sorted(by: { $0.key < $1.key }) {
+            args += ["--build-arg", "\(key)=\(value)"]
+        }
+        if !useCache { args.append("--no-cache") }
+        args.append(context)
+        let result = try await runner.run(args, timeout: .seconds(1800))
+        guard result.succeeded else {
+            throw BackendError.operationFailed(
+                "image build failed: \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))"
+            )
+        }
+        return result.stdout.isEmpty ? result.stderr : result.stdout
     }
 
     /// Delete one or more images by ID or reference.
