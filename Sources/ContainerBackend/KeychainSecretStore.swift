@@ -149,7 +149,7 @@ public struct KeychainSecretStore: Sendable {
                 throw BackendError.operationFailed("invalid keychain secret reference for \(key)")
             }
             guard let secret = try lookup(name) else {
-                throw BackendError.notFound("secret \(name)")
+                throw BackendError.notFound("secret '\(name)'")
             }
             return "\(key)=\(secret)"
         }
@@ -179,7 +179,7 @@ public struct KeychainSecretStore: Sendable {
         let url = fallbackURL
         guard FileManager.default.fileExists(atPath: url.path) else { return [:] }
         let data = try Data(contentsOf: url)
-        return (try? JSONDecoder().decode([String: String].self, from: data)) ?? [:]
+        return try JSONDecoder().decode([String: String].self, from: data)
     }
 
     private func persistFallbackSecrets(_ secrets: [String: String]) throws {
@@ -187,10 +187,21 @@ public struct KeychainSecretStore: Sendable {
         try FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(),
             withIntermediateDirectories: true,
-            attributes: nil
+            attributes: [.posixPermissions: 0o700]
         )
+        if !FileManager.default.fileExists(atPath: url.path) {
+            FileManager.default.createFile(
+                atPath: url.path,
+                contents: nil,
+                attributes: [.posixPermissions: 0o600]
+            )
+        }
         let data = try JSONEncoder().encode(secrets)
-        try data.write(to: url, options: .atomic)
+        let handle = try FileHandle(forWritingTo: url)
+        defer { try? handle.close() }
+        try handle.truncate(atOffset: 0)
+        try handle.seek(toOffset: 0)
+        try handle.write(contentsOf: data)
     }
 #endif
 }

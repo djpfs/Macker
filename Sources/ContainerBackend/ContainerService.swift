@@ -98,7 +98,7 @@ public struct ContainerService: ContainerServiceProtocol, Sendable {
         platform: PlatformResolver = PlatformResolver(),
         runner: ProcessRunner = ProcessRunner(),
         secrets: KeychainSecretStore = KeychainSecretStore(),
-        auditLogger: AuditLogger = AuditLogger()
+        auditLogger: AuditLogger = .shared
     ) {
         self.client = client
         self.images = images
@@ -360,8 +360,8 @@ public struct ContainerService: ContainerServiceProtocol, Sendable {
         let containers = try await listContainers(filters: .all)
         if let builder = containers.first(where: { $0.id == "buildkit" }) {
             try await deleteContainer(id: builder.id, force: true)
+            await auditLogger.record(action: "cleanup.deleteBuildkitBuilder", target: "buildkit", succeeded: true)
         }
-        await auditLogger.record(action: "cleanup.deleteBuildkitBuilder", target: "buildkit", succeeded: true)
     }
 
     /// Build an image from a context directory via the `container build` CLI.

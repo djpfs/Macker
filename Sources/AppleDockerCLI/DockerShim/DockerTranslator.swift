@@ -19,7 +19,7 @@ public struct DockerTranslator: Sendable {
 
     public init(
         service: ContainerService = ContainerService(),
-        auditLogger: AuditLogger = AuditLogger()
+        auditLogger: AuditLogger = .shared
     ) {
         self.service = service
         self.auditLogger = auditLogger
@@ -27,99 +27,92 @@ public struct DockerTranslator: Sendable {
 
     /// Execute a parsed docker command.
     public func execute(_ command: DockerCommand) async throws {
-        let action = "docker.\(command.subcommand)\(command.subSubcommand.map { ".\($0)" } ?? "")"
-        do {
-            switch command.subcommand {
-            case "ps", "ls":
-                try await ps(command)
-            case "run":
-                try await run(command)
-            case "stop":
-                try await stop(command)
-            case "rm", "remove":
-                try await rm(command)
-            case "kill":
-                try await kill(command)
-            case "start":
-                try await start(command)
-            case "restart":
-                try await restart(command)
-            case "images", "image":
-                try await images(command)
-            case "rmi":
-                // `docker rmi IMAGE...` — alias for image delete.
-                let ids = command.arguments
-                guard !ids.isEmpty else { throw DockerShimError.missingArgument("image") }
-                try await service.images.delete(ids)
-            case "pull":
-                try await pull(command)
-            case "logs":
-                try await logs(command)
-            case "exec":
-                try await exec(command)
-            case "inspect":
-                try await inspect(command)
-            case "cp":
-                try await cp(command)
-            case "stats":
-                try await stats(command)
-            case "port":
-                try await port(command)
-            case "wait":
-                try await wait(command)
-            case "network":
-                try await network(command)
-            case "volume":
-                try await volume(command)
-            case "system":
-                try await system(command)
-            case "version":
-                try await version(command)
-            case "info":
-                try await info(command)
-            case "build":
-                try await build(command)
-            case "create":
-                try await create(command)
-            case "prune":
-                try await prune(command)
-            case "tag":
-                try await tag(command)
-            case "push":
-                try await push(command)
-            case "load":
-                try await load(command)
-            case "save":
-                try await save(command)
-            case "rename":
-                throw DockerShimError.unsupportedCommand("rename")
-            case "pause":
-                try await pause(command)
-            case "unpause":
-                try await unpause(command)
-            case "top":
-                try await top(command)
-            case "update":
-                throw DockerShimError.unsupportedCommand("update")
-            case "events":
-                try await events(command)
-            case "attach":
-                throw DockerShimError.unsupportedCommand("attach")
-            case "history":
-                throw DockerShimError.unsupportedCommand("history")
-            case "scan":
-                try await scan(command)
-            case "secret":
-                try await secret(command)
-            case "compose":
-                try await compose(command)
-            default:
-                throw DockerShimError.unsupportedCommand(command.subcommand)
-            }
-            await auditLogger.record(action: action, target: command.arguments.first, succeeded: true)
-        } catch {
-            await auditLogger.record(action: action, target: command.arguments.first, succeeded: false, detail: error.localizedDescription)
-            throw error
+        switch command.subcommand {
+        case "ps", "ls":
+            try await ps(command)
+        case "run":
+            try await run(command)
+        case "stop":
+            try await stop(command)
+        case "rm", "remove":
+            try await rm(command)
+        case "kill":
+            try await kill(command)
+        case "start":
+            try await start(command)
+        case "restart":
+            try await restart(command)
+        case "images", "image":
+            try await images(command)
+        case "rmi":
+            // `docker rmi IMAGE...` — alias for image delete.
+            let ids = command.arguments
+            guard !ids.isEmpty else { throw DockerShimError.missingArgument("image") }
+            try await service.images.delete(ids)
+        case "pull":
+            try await pull(command)
+        case "logs":
+            try await logs(command)
+        case "exec":
+            try await exec(command)
+        case "inspect":
+            try await inspect(command)
+        case "cp":
+            try await cp(command)
+        case "stats":
+            try await stats(command)
+        case "port":
+            try await port(command)
+        case "wait":
+            try await wait(command)
+        case "network":
+            try await network(command)
+        case "volume":
+            try await volume(command)
+        case "system":
+            try await system(command)
+        case "version":
+            try await version(command)
+        case "info":
+            try await info(command)
+        case "build":
+            try await build(command)
+        case "create":
+            try await create(command)
+        case "prune":
+            try await prune(command)
+        case "tag":
+            try await tag(command)
+        case "push":
+            try await push(command)
+        case "load":
+            try await load(command)
+        case "save":
+            try await save(command)
+        case "rename":
+            throw DockerShimError.unsupportedCommand("rename")
+        case "pause":
+            try await pause(command)
+        case "unpause":
+            try await unpause(command)
+        case "top":
+            try await top(command)
+        case "update":
+            throw DockerShimError.unsupportedCommand("update")
+        case "events":
+            try await events(command)
+        case "attach":
+            throw DockerShimError.unsupportedCommand("attach")
+        case "history":
+            throw DockerShimError.unsupportedCommand("history")
+        case "scan":
+            try await scan(command)
+        case "secret":
+            try await secret(command)
+        case "compose":
+            try await compose(command)
+        default:
+            throw DockerShimError.unsupportedCommand(command.subcommand)
         }
     }
 
@@ -554,54 +547,62 @@ public struct DockerTranslator: Sendable {
             return
         }
         print("")
-        print("VulnerabilityID   Severity   Package   Installed   Fixed")
-        for finding in report.findings.prefix(200) {
-            print("\(finding.vulnerabilityID)   \(finding.severity)   \(finding.packageName)   \(finding.installedVersion ?? "-")   \(finding.fixedVersion ?? "-")")
+        let headers = ["VulnerabilityID", "Severity", "Package", "Installed", "Fixed"]
+        let rows = report.findings.prefix(200).map { finding in
+            [finding.vulnerabilityID, finding.severity, finding.packageName, finding.installedVersion ?? "-", finding.fixedVersion ?? "-"]
         }
+        Self.printTable(headers: headers, rows: rows)
     }
 
     /// `docker secret` — Keychain-backed secret management.
     private func secret(_ command: DockerCommand) async throws {
-        switch command.subSubcommand {
-        case "ls":
-            let names = try service.secrets.listSecretNames()
-            print("NAME")
-            for name in names {
+        let action = "secret.\(command.subSubcommand ?? "unknown")"
+        do {
+            switch command.subSubcommand {
+            case "ls":
+                let names = try service.secrets.listSecretNames()
+                print("NAME")
+                for name in names {
+                    print(name)
+                }
+            case "create":
+                guard let name = command.arguments.first else {
+                    throw DockerShimError.missingArgument("SECRET_NAME")
+                }
+                let source = command.arguments.dropFirst().first
+                let value: String
+                if let source, source != "-" {
+                    value = try String(contentsOfFile: source, encoding: .utf8)
+                } else {
+                    let data = FileHandle.standardInput.readDataToEndOfFile()
+                    value = String(decoding: data, as: UTF8.self)
+                }
+                try service.secrets.setSecret(name: name, value: value.trimmingCharacters(in: .newlines))
                 print(name)
+            case "inspect":
+                let names = command.arguments
+                guard !names.isEmpty else { throw DockerShimError.missingArgument("SECRET_NAME") }
+                let existing = Set(try service.secrets.listSecretNames())
+                for name in names where !existing.contains(name) {
+                    throw BackendError.notFound("secret '\(name)'")
+                }
+                let payload = names.map { ["Name": $0] }
+                let data = try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys])
+                print(String(decoding: data, as: UTF8.self))
+            case "rm", "remove":
+                let names = command.arguments
+                guard !names.isEmpty else { throw DockerShimError.missingArgument("SECRET_NAME") }
+                for name in names {
+                    try service.secrets.deleteSecret(named: name)
+                    print(name)
+                }
+            default:
+                throw DockerShimError.unsupportedCommand("secret \(command.subSubcommand ?? "")")
             }
-        case "create":
-            guard let name = command.arguments.first else {
-                throw DockerShimError.missingArgument("SECRET_NAME")
-            }
-            let source = command.arguments.dropFirst().first
-            let value: String
-            if let source, source != "-" {
-                value = try String(contentsOfFile: source, encoding: .utf8)
-            } else {
-                let data = FileHandle.standardInput.readDataToEndOfFile()
-                value = String(decoding: data, as: UTF8.self)
-            }
-            try service.secrets.setSecret(name: name, value: value.trimmingCharacters(in: .newlines))
-            print(name)
-        case "inspect":
-            let names = command.arguments
-            guard !names.isEmpty else { throw DockerShimError.missingArgument("SECRET_NAME") }
-            let existing = Set(try service.secrets.listSecretNames())
-            let payload = names.compactMap { name -> [String: String]? in
-                guard existing.contains(name) else { return nil }
-                return ["Name": name]
-            }
-            let data = try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys])
-            print(String(decoding: data, as: UTF8.self))
-        case "rm", "remove":
-            let names = command.arguments
-            guard !names.isEmpty else { throw DockerShimError.missingArgument("SECRET_NAME") }
-            for name in names {
-                try service.secrets.deleteSecret(named: name)
-                print(name)
-            }
-        default:
-            throw DockerShimError.unsupportedCommand("secret \(command.subSubcommand ?? "")")
+            await auditLogger.record(action: action, target: command.arguments.first, succeeded: true)
+        } catch {
+            await auditLogger.record(action: action, target: command.arguments.first, succeeded: false, detail: error.localizedDescription)
+            throw error
         }
     }
 

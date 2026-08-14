@@ -38,9 +38,11 @@ public enum ComposeOrchestratorError: Error, LocalizedError {
 /// Executes compose projects against the container runtime.
 public struct ComposeOrchestrator: Sendable {
     private let service: ContainerService
+    private let secretStore: KeychainSecretStore
 
-    public init(service: ContainerService = ContainerService()) {
+    public init(service: ContainerService = ContainerService(), secretStore: KeychainSecretStore? = nil) {
         self.service = service
+        self.secretStore = secretStore ?? service.secrets
     }
 
     /// An image's description plus its default process config, with the raw
@@ -677,7 +679,7 @@ public struct ComposeOrchestrator: Sendable {
         for (key, value) in service.environment {
             env.append("\(key)=\(value)")
         }
-        process.environment = try self.service.secrets.resolveEnvironment(Self.deduplicateEnv(env))
+        process.environment = try secretStore.resolveEnvironment(Self.deduplicateEnv(env))
 
         // Mounts: named volumes, bind mounts, tmpfs.
         var mounts: [Filesystem] = []

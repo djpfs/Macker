@@ -58,7 +58,7 @@ public struct ImageService: Sendable {
     public init(
         runner: ProcessRunner = ProcessRunner(),
         scanner: VulnerabilityScanner = VulnerabilityScanner(),
-        auditLogger: AuditLogger = AuditLogger()
+        auditLogger: AuditLogger = .shared
     ) {
         self.runner = runner
         self.scanner = scanner

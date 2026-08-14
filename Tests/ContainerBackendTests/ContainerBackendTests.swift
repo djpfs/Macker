@@ -89,7 +89,7 @@ final class SecurityHardeningTests: XCTestCase {
             guard case BackendError.notFound(let message) = error else {
                 return XCTFail("expected notFound, got \(error)")
             }
-            XCTAssertEqual(message, "secret missing")
+            XCTAssertEqual(message, "secret 'missing'")
         }
     }
 

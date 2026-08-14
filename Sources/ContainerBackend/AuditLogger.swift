@@ -32,8 +32,11 @@ public struct AuditEvent: Sendable, Codable, Identifiable, Equatable {
 
 /// Writes audit events to `~/.macker/audit.jsonl`.
 public actor AuditLogger {
+    public static let shared = AuditLogger()
+
     private let logFileURL: URL
     private let encoder: JSONEncoder
+    private var fileHandle: FileHandle?
 
     public init(logFileURL: URL? = nil) {
         if let logFileURL {
@@ -61,19 +64,37 @@ public actor AuditLogger {
         let fm = FileManager.default
         let directory = logFileURL.deletingLastPathComponent()
         do {
-            try fm.createDirectory(at: directory, withIntermediateDirectories: true, attributes: nil)
-
-            if !fm.fileExists(atPath: logFileURL.path) {
-                fm.createFile(atPath: logFileURL.path, contents: nil)
-            }
-
-            let handle = try FileHandle(forWritingTo: logFileURL)
-            defer { try? handle.close() }
+            let handle = try ensureFileHandle(fileManager: fm, directory: directory)
             try handle.seekToEnd()
-            handle.write(data)
-            handle.write(Data([0x0a]))
+            try handle.write(contentsOf: data)
+            try handle.write(contentsOf: Data([0x0a]))
         } catch {
             // Best effort only.
         }
+    }
+
+    private func ensureFileHandle(fileManager fm: FileManager, directory: URL) throws -> FileHandle {
+        if let fileHandle {
+            return fileHandle
+        }
+        try fm.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        if !fm.fileExists(atPath: logFileURL.path) {
+            fm.createFile(
+                atPath: logFileURL.path,
+                contents: nil,
+                attributes: [.posixPermissions: 0o600]
+            )
+        }
+        let handle = try FileHandle(forWritingTo: logFileURL)
+        fileHandle = handle
+        return handle
+    }
+
+    deinit {
+        try? fileHandle?.close()
     }
 }
