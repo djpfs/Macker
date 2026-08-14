@@ -9,7 +9,7 @@ import UniformTypeIdentifiers
 // MARK: - Project templates
 
 /// A pre-built project template the user can load as a starting point.
-struct ProjectTemplate: Identifiable {
+struct ProjectTemplate: Identifiable, Hashable {
     let id = UUID()
     let name: String
     let description: String
@@ -193,8 +193,6 @@ struct ComposeEditorView: View {
     @State private var composeText: String = ""
     @State private var dockerfileText: String = ""
     @State private var showTemplatePicker = false
-    @State private var showSavePanel = false
-    @State private var showOpenPanel = false
     @State private var saveMessage: String?
 
     var body: some View {

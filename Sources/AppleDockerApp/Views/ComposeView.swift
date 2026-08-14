@@ -480,7 +480,11 @@ struct ComposeView: View {
         panel.allowedContentTypes = [.plainText]
         guard panel.runModal() == .OK, let url = panel.url else { return }
         let content = state.composeLogLines.joined(separator: "\n")
-        try? content.write(to: url, atomically: true, encoding: .utf8)
+        do {
+            try content.write(to: url, atomically: true, encoding: .utf8)
+        } catch {
+            state.composeStatusMessage = StatusMessage(kind: .error, text: "Failed to save logs: \(error.localizedDescription)")
+        }
     }
 
     /// Append the last 50 lines of each service's container output to the log

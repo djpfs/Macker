@@ -353,6 +353,10 @@ private struct LogsView: View {
         panel.allowedContentTypes = [.plainText]
         guard panel.runModal() == .OK, let url = panel.url else { return }
         let content = lines.joined(separator: "\n")
-        try? content.write(to: url, atomically: true, encoding: .utf8)
+        do {
+            try content.write(to: url, atomically: true, encoding: .utf8)
+        } catch {
+            lines.append("[ERROR] Failed to save logs: \(error.localizedDescription)")
+        }
     }
 }

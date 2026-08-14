@@ -271,7 +271,7 @@ struct ContainerSettingsView: View {
                         .textFieldStyle(.roundedBorder)
                         .frame(maxWidth: .infinity)
                     Button {
-                        model.envVars.removeAll { $0.id == entry.id }
+                        model.envVars.removeAll { $0.id == $entry.wrappedValue.id }
                     } label: {
                         Image(systemName: "minus.circle")
                     }
