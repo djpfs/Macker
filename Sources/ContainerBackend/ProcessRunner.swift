@@ -37,9 +37,10 @@ public struct ProcessRunner: Sendable {
     public func run(
         _ args: [String],
         environment: [String: String] = [:],
+        standardInput: Data? = nil,
         timeout: Duration = .seconds(300)
     ) async throws -> ProcessResult {
-        try await runExecutable(containerPath, args: args, environment: environment, timeout: timeout)
+        try await runExecutable(containerPath, args: args, environment: environment, standardInput: standardInput, timeout: timeout)
     }
 
     /// Run an arbitrary executable (used for `container` discovery and tests).
@@ -47,6 +48,7 @@ public struct ProcessRunner: Sendable {
         _ path: String,
         args: [String],
         environment: [String: String] = [:],
+        standardInput: Data? = nil,
         timeout: Duration = .seconds(300)
     ) async throws -> ProcessResult {
         let process = Process()
@@ -61,6 +63,8 @@ public struct ProcessRunner: Sendable {
 
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
+        let stdinPipe = standardInput.map { _ in Pipe() }
+        process.standardInput = stdinPipe
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
 
@@ -82,6 +86,10 @@ public struct ProcessRunner: Sendable {
         }
 
         try process.run()
+        if let standardInput, let stdinPipe {
+            stdinPipe.fileHandleForWriting.write(standardInput)
+            stdinPipe.fileHandleForWriting.closeFile()
+        }
 
         let deadline = ContinuousClock.now + timeout
         while process.isRunning {

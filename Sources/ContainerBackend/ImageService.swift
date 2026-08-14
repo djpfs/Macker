@@ -74,6 +74,50 @@ public struct ImageService: Sendable {
         if let platform {
             args += ["--platform", platform]
         }
+
+        /// Authenticate to an OCI registry. The password is sent over stdin and
+        /// never appears in the process arguments or environment.
+        public func login(
+            registry: String,
+            username: String,
+            password: String
+        ) async throws {
+            let result = try await runner.run(
+                ["registry", "login", "--username", username, "--password-stdin", registry],
+                standardInput: Data((password + "\n").utf8),
+                timeout: .seconds(60)
+            )
+            guard result.succeeded else {
+                throw BackendError.operationFailed(
+                    "registry login failed: \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))"
+                )
+            }
+        }
+
+        /// Build an image using a Dockerfile or Containerfile.
+        public func build(
+            context: String,
+            tag: String? = nil,
+            dockerfile: String? = nil,
+            buildArgs: [String: String] = [:],
+            noCache: Bool = false
+        ) async throws -> String {
+            var args = ["build", "--progress", "plain"]
+            if let tag, !tag.isEmpty { args += ["-t", tag] }
+            if let dockerfile, !dockerfile.isEmpty { args += ["-f", dockerfile] }
+            for (key, value) in buildArgs.sorted(by: { $0.key < $1.key }) {
+                args += ["--build-arg", "\(key)=\(value)"]
+            }
+            if noCache { args.append("--no-cache") }
+            args.append(context)
+            let result = try await runner.run(args, timeout: .seconds(1800))
+            guard result.succeeded else {
+                throw BackendError.operationFailed(
+                    "image build failed: \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))"
+                )
+            }
+            return result.stdout.isEmpty ? result.stderr : result.stdout
+        }
         args.append(reference)
         let result = try await runner.run(args, timeout: .seconds(600))
         guard result.succeeded else {
