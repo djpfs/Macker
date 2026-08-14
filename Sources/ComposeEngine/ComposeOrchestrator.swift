@@ -92,6 +92,23 @@ public struct ComposeOrchestrator: Sendable {
         "\(sanitize(project))_\(sanitize(network))"
     }
 
+    /// The runtime network name for a compose network reference.
+    static func runtimeNetworkName(project: ComposeProject, network: String) -> String {
+        if network == "default" {
+            return ContainerAPIClient.defaultNetworkName
+        }
+        // If the network wasn't declared, keep the raw key as a best-effort
+        // runtime name (validation normally rejects undeclared networks).
+        guard let config = project.networks[network] else { return network }
+        if let explicitName = config.name, !explicitName.isEmpty {
+            return explicitName
+        }
+        if config.external {
+            return network
+        }
+        return Self.networkName(project: project.name, network: network)
+    }
+
     /// The platform volume name for a compose volume.
     public static func volumeName(project: String, volume: String) -> String {
         "\(sanitize(project))_\(sanitize(volume))"
@@ -160,6 +177,10 @@ public struct ComposeOrchestrator: Sendable {
         // 2. Create the project's named volumes.
         progress?.yield("Creating volumes...")
         try await ensureVolumes(project)
+
+        // 2b. Create the project's internal networks.
+        progress?.yield("Creating networks...")
+        try await ensureNetworks(project)
 
         // 3. Create containers in dependency order, recreating any whose
         //    config hash changed since the last `up`.
@@ -539,6 +560,48 @@ public struct ComposeOrchestrator: Sendable {
         return nil
     }
 
+    // MARK: - Connection inspection
+
+    /// A snapshot of a service's network attachments and published ports.
+    public struct ServiceConnections: Sendable {
+        /// The service name.
+        public let service: String
+        /// Network attachments for the container.
+        public let attachments: [Attachment]
+        /// Published ports for the container.
+        public let publishedPorts: [PublishPort]
+
+        public init(service: String, attachments: [Attachment], publishedPorts: [PublishPort]) {
+            self.service = service
+            self.attachments = attachments
+            self.publishedPorts = publishedPorts
+        }
+    }
+
+    /// Inspect the network connections for every service in the project.
+    ///
+    /// Returns one ``ServiceConnections`` entry per service that has a container
+    /// (running or stopped). Services whose containers do not exist yet are
+    /// silently omitted.
+    public func inspectConnections(project: ComposeProject) async throws -> [ServiceConnections] {
+        var result: [ServiceConnections] = []
+        for name in project.services.keys.sorted() {
+            let containerName = Self.containerName(project: project.name, service: name, config: project.services[name])
+            do {
+                let snapshot = try await service.getContainer(id: containerName)
+                result.append(ServiceConnections(
+                    service: name,
+                    attachments: snapshot.networks,
+                    publishedPorts: snapshot.configuration.publishedPorts
+                ))
+            } catch BackendError.notFound {
+                // Container hasn't been created yet — skip silently.
+                continue
+            }
+        }
+        return result
+    }
+
     // MARK: - Images
 
     /// The image reference used by each service.
@@ -696,9 +759,7 @@ public struct ComposeOrchestrator: Sendable {
         // Published ports.
         var publishedPorts: [PublishPort] = []
         for spec in service.ports {
-            if let port = Self.parsePortSpec(spec) {
-                publishedPorts.append(port)
-            }
+            publishedPorts.append(contentsOf: Self.parsePortSpec(spec))
         }
 
         // Resources.
@@ -728,15 +789,18 @@ public struct ComposeOrchestrator: Sendable {
             labels[ComposeLabel.configHash] = configHash
         }
 
-        // Networks: attach to the platform's default network with a unique
-        // hostname (the server rejects empty/duplicate hostnames). The MTU
-        // must be set explicitly: the CLI defaults to 1280, and omitting it
-        // makes bootstrap fail with EOPNOTSUPP.
+        // Networks: attach to configured compose networks, or the platform's
+        // default network when none are configured. Hostnames must be unique
+        // and non-empty, and MTU must be set explicitly to avoid EOPNOTSUPP.
         let hostname = service.hostname ?? containerName
-        let networks = [AttachmentConfiguration(
-            network: ContainerAPIClient.defaultNetworkName,
-            options: AttachmentOptions(hostname: hostname, mtu: 1280)
-        )]
+        let configuredNetworks = service.networks.isEmpty ? ["default"] : service.networks
+        let networks = configuredNetworks.enumerated().map { index, network in
+            let attachmentHostname = index == 0 ? hostname : "\(hostname)-\(Self.sanitize(network))"
+            AttachmentConfiguration(
+                network: Self.runtimeNetworkName(project: project, network: network),
+                options: AttachmentOptions(hostname: attachmentHostname, mtu: 1280)
+            )
+        }
 
         return ContainerConfiguration(
             id: containerName,
@@ -746,7 +810,13 @@ public struct ComposeOrchestrator: Sendable {
             publishedPorts: publishedPorts,
             labels: labels,
             networks: networks,
-            dns: service.dns.isEmpty ? nil : .init(nameservers: service.dns),
+            dns: service.dns.isEmpty && service.dnsSearch.isEmpty && service.dnsOpt.isEmpty
+                ? nil
+                : .init(
+                    nameservers: service.dns,
+                    searchDomains: service.dnsSearch,
+                    options: service.dnsOpt
+                  ),
             resources: resources,
             readOnly: service.readOnly,
             privileged: service.privileged,
@@ -811,6 +881,40 @@ public struct ComposeOrchestrator: Sendable {
             if !existingNames.contains(platformName) {
                 _ = try await service.createVolume(name: platformName)
             }
+        }
+    }
+
+    /// Create the project's internal networks that don't exist yet.
+    private func ensureNetworks(_ project: ComposeProject) async throws {
+        let existing = try await service.listNetworks()
+        let existingNames = Set(existing.map(\.name))
+        for (name, config) in project.networks where !config.external {
+            let runtimeName = Self.runtimeNetworkName(project: project, network: name)
+            if existingNames.contains(runtimeName) {
+                continue
+            }
+
+            let primaryPool = config.ipam?.config.first
+            var options: [String: String] = [:]
+            if let ipRange = primaryPool?.ipRange {
+                options["ip_range"] = ipRange
+            }
+            if let gateway = primaryPool?.gateway {
+                options["gateway"] = gateway
+            }
+            if let ipamDriver = config.ipam?.driver {
+                options["ipam_driver"] = ipamDriver
+            }
+            // The backend network model has a first-class subnet field only;
+            // gateway/ip_range are passed through plugin options.
+
+            let configuration = NetworkConfiguration(
+                name: runtimeName,
+                ipv4Subnet: primaryPool?.subnet,
+                plugin: config.driver ?? "vmnet",
+                options: options
+            )
+            _ = try await service.createNetwork(configuration: configuration)
         }
     }
 
@@ -953,21 +1057,58 @@ public struct ComposeOrchestrator: Sendable {
         )
     }
 
-    /// Parse a compose port spec like `8080:80`, `127.0.0.1:8080:80`, `80`.
-    static func parsePortSpec(_ spec: String) -> PublishPort? {
-        let parts = spec.split(separator: ":").map(String.init)
+    /// Parse a compose port spec like `8080:80`, `127.0.0.1:8080:80`, `80`,
+    /// `8080:80/udp`, or `8080-8090:80-90`.
+    static func parsePortSpec(_ spec: String) -> [PublishPort] {
+        // Strip an optional protocol suffix, e.g. "8080:80/udp".
+        var remaining = spec
+        var proto: PublishProtocol = .tcp
+        if let slashIdx = remaining.lastIndex(of: "/") {
+            let suffix = String(remaining[remaining.index(after: slashIdx)...])
+            if let p = PublishProtocol(suffix) {
+                proto = p
+                remaining = String(remaining[..<slashIdx])
+            }
+        }
+
+        let parts = remaining.split(separator: ":").map(String.init)
+
+        // Helper: expand a possible range like "8080-8090" into [8080...8090].
+        func parsePorts(_ s: String) -> ClosedRange<UInt16>? {
+            let rangeParts = s.split(separator: "-").map(String.init)
+            if rangeParts.count == 2,
+               let lo = UInt16(rangeParts[0]), let hi = UInt16(rangeParts[1]),
+               lo <= hi {
+                return lo...hi
+            } else if rangeParts.count == 1, let p = UInt16(rangeParts[0]) {
+                return p...p
+            }
+            return nil
+        }
+
         switch parts.count {
         case 1:
-            guard let port = UInt16(parts[0]) else { return nil }
-            return PublishPort(hostAddress: IPAddress("0.0.0.0"), hostPort: port, containerPort: port, proto: .tcp, count: 1)
+            guard let hostRange = parsePorts(parts[0]) else { return [] }
+            return hostRange.map { p in
+                PublishPort(hostAddress: IPAddress("0.0.0.0"), hostPort: p, containerPort: p, proto: proto, count: 1)
+            }
         case 2:
-            guard let host = UInt16(parts[0]), let container = UInt16(parts[1]) else { return nil }
-            return PublishPort(hostAddress: IPAddress("0.0.0.0"), hostPort: host, containerPort: container, proto: .tcp, count: 1)
+            guard let hostRange = parsePorts(parts[0]),
+                  let containerRange = parsePorts(parts[1]),
+                  hostRange.count == containerRange.count else { return [] }
+            return zip(hostRange, containerRange).map { (h, c) in
+                PublishPort(hostAddress: IPAddress("0.0.0.0"), hostPort: h, containerPort: c, proto: proto, count: 1)
+            }
         case 3:
-            guard let host = UInt16(parts[1]), let container = UInt16(parts[2]) else { return nil }
-            return PublishPort(hostAddress: IPAddress(parts[0]), hostPort: host, containerPort: container, proto: .tcp, count: 1)
+            let address = parts[0]
+            guard let hostRange = parsePorts(parts[1]),
+                  let containerRange = parsePorts(parts[2]),
+                  hostRange.count == containerRange.count else { return [] }
+            return zip(hostRange, containerRange).map { (h, c) in
+                PublishPort(hostAddress: IPAddress(address), hostPort: h, containerPort: c, proto: proto, count: 1)
+            }
         default:
-            return nil
+            return []
         }
     }
 

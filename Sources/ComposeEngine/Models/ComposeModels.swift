@@ -121,6 +121,10 @@ public struct ServiceConfig: Sendable, Codable, Equatable {
     public var extraHosts: [String]
     /// DNS servers.
     public var dns: [String]
+    /// DNS search domains.
+    public var dnsSearch: [String]
+    /// DNS resolver options (e.g. `["ndots:5"]`).
+    public var dnsOpt: [String]
     /// Linux capabilities to add.
     public var capAdd: [String]
     /// Linux capabilities to drop.
@@ -168,6 +172,8 @@ public struct ServiceConfig: Sendable, Codable, Equatable {
         stopSignal: String? = nil,
         extraHosts: [String] = [],
         dns: [String] = [],
+        dnsSearch: [String] = [],
+        dnsOpt: [String] = [],
         capAdd: [String] = [],
         capDrop: [String] = [],
         securityOpt: [String] = [],
@@ -206,6 +212,8 @@ public struct ServiceConfig: Sendable, Codable, Equatable {
         self.stopSignal = stopSignal
         self.extraHosts = extraHosts
         self.dns = dns
+        self.dnsSearch = dnsSearch
+        self.dnsOpt = dnsOpt
         self.capAdd = capAdd
         self.capDrop = capDrop
         self.securityOpt = securityOpt
@@ -246,6 +254,8 @@ public struct ServiceConfig: Sendable, Codable, Equatable {
         case stopSignal = "stop_signal"
         case extraHosts = "extra_hosts"
         case dns
+        case dnsSearch = "dns_search"
+        case dnsOpt = "dns_opt"
         case capAdd = "cap_add"
         case capDrop = "cap_drop"
         case securityOpt = "security_opt"
@@ -287,6 +297,8 @@ public struct ServiceConfig: Sendable, Codable, Equatable {
         stopSignal = try c.decodeIfPresent(String.self, forKey: .stopSignal)
         extraHosts = try c.decodeIfPresent([String].self, forKey: .extraHosts) ?? []
         dns = try c.decodeIfPresent([String].self, forKey: .dns) ?? []
+        dnsSearch = try c.decodeIfPresent([String].self, forKey: .dnsSearch) ?? []
+        dnsOpt = try c.decodeIfPresent([String].self, forKey: .dnsOpt) ?? []
         capAdd = try c.decodeIfPresent([String].self, forKey: .capAdd) ?? []
         capDrop = try c.decodeIfPresent([String].self, forKey: .capDrop) ?? []
         securityOpt = try c.decodeIfPresent([String].self, forKey: .securityOpt) ?? []
@@ -545,19 +557,58 @@ public struct NetworkConfig: Sendable, Codable, Equatable {
     public var driver: String?
     /// Whether the network is external (pre-existing).
     public var external: Bool
-    /// The external network's name.
+    /// The external network's name (or custom internal name).
     public var name: String?
+    /// IPAM configuration for custom subnet allocation.
+    public var ipam: IPAMConfig?
 
-    public init(driver: String? = nil, external: Bool = false, name: String? = nil) {
+    /// IPAM (IP Address Management) configuration.
+    public struct IPAMConfig: Sendable, Codable, Equatable {
+        /// The IPAM driver.
+        public var driver: String?
+        /// Per-subnet configuration entries.
+        public var config: [IPAMPool]
+
+        public init(driver: String? = nil, config: [IPAMPool] = []) {
+            self.driver = driver
+            self.config = config
+        }
+    }
+
+    /// A single IPAM subnet pool entry.
+    public struct IPAMPool: Sendable, Codable, Equatable {
+        /// The subnet in CIDR notation (e.g. `"172.28.0.0/16"`).
+        public var subnet: String?
+        /// The IP range allocated from the subnet (e.g. `"172.28.5.0/24"`).
+        public var ipRange: String?
+        /// The gateway address for the subnet (e.g. `"172.28.5.254"`).
+        public var gateway: String?
+
+        public init(subnet: String? = nil, ipRange: String? = nil, gateway: String? = nil) {
+            self.subnet = subnet
+            self.ipRange = ipRange
+            self.gateway = gateway
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case subnet
+            case ipRange = "ip_range"
+            case gateway
+        }
+    }
+
+    public init(driver: String? = nil, external: Bool = false, name: String? = nil, ipam: IPAMConfig? = nil) {
         self.driver = driver
         self.external = external
         self.name = name
+        self.ipam = ipam
     }
 
     enum CodingKeys: String, CodingKey {
         case driver
         case external
         case name
+        case ipam
     }
 
     public init(from decoder: Decoder) throws {
@@ -570,6 +621,7 @@ public struct NetworkConfig: Sendable, Codable, Equatable {
             external = c.contains(.external)
         }
         name = try c.decodeIfPresent(String.self, forKey: .name)
+        ipam = try c.decodeIfPresent(IPAMConfig.self, forKey: .ipam)
     }
 }
 
