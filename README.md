@@ -1,130 +1,264 @@
+<div align="center">
+
+<img src="docs/img/screenshot-01.png" alt="Macker Dashboard" width="900" />
+
+<br />
+
+<img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker" />
+
 # Macker
 
-A **Docker Desktop replacement** built on Apple's native container runtime
-([`apple/container`](https://github.com/apple/container)). It ships a native
-macOS SwiftUI GUI **and** a CLI shim you can symlink as `docker` /
-`docker-compose`, plus a custom Compose engine with service-name DNS and hot
-reload for virtiofs bind mounts.
+### The Docker Desktop replacement that runs on Apple's native container runtime.
 
-> Containers run as lightweight Linux VMs on Apple Silicon via
-> Virtualization.framework — no Docker daemon, no Docker Desktop license, no
-> gRPC/NIO dependency.
+**One native macOS GUI. One CLI that doubles as `docker` and `docker-compose`. Zero gRPC. Zero NIO. Zero daemon of its own.**
 
----
+<br />
 
-## Table of Contents
+[![macOS](https://img.shields.io/badge/macOS-15%2B-black?style=for-the-badge&logo=apple&logoColor=white)](https://www.apple.com/macos/sequoia/)
+[![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-arm64-FF375F?style=for-the-badge&logo=apple&logoColor=white)](https://en.wikipedia.org/wiki/Apple_silicon)
+[![Swift](https://img.shields.io/badge/Swift-5.9%2B-F05138?style=for-the-badge&logo=swift&logoColor=white)](https://swift.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
+[![GitHub release](https://img.shields.io/github/v/release/djpfs/Macker?style=for-the-badge&logo=github)](https://github.com/djpfs/Macker/releases)
+[![Homebrew Cask](https://img.shields.io/badge/Homebrew-cask-FBB040?style=for-the-badge&logo=homebrew&logoColor=white)](https://github.com/djpfs/homebrew-tools)
 
-- [Features](#features)
-- [How it works](#how-it-works)
-- [Architecture](#architecture)
-- [Requirements](#requirements)
-- [Installation](#installation)
-- [Usage](#usage)
-  - [GUI](#gui)
-  - [CLI](#cli)
-  - [Docker compatibility](#docker-compatibility)
-- [Supported commands](#supported-commands)
-- [Compose engine](#compose-engine)
-- [Hot reload](#hot-reload)
-- [Menu bar](#menu-bar)
-- [Storage & cleanup](#storage--cleanup)
-- [Security](#security)
-- [Development](#development)
-- [Limitations](#limitations)
-- [Next steps](#next-steps)
-- [License](#license)
+<br />
+
+[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/djpfs/Macker/ci.yml?branch=main&style=for-the-badge)](https://github.com/djpfs/Macker/actions)
+[![CodeQL](https://img.shields.io/github/actions/workflow/status/djpfs/Macker/codeql.yml?branch=main&style=for-the-badge&label=CodeQL&logo=github-actions)](https://github.com/djpfs/Macker/security/code-scanning)
+[![Swift Format](https://img.shields.io/badge/lint-swift--format-FF6B6B?style=for-the-badge&logo=swift)](https://github.com/nicklockwood/SwiftFormat)
+
+<br />
+
+[<img src="https://img.shields.io/badge/Screenshots-1E90FF?style=for-the-badge&logo=files&logoColor=white" alt="Screenshots" />](#-screenshots) ·
+[<img src="https://img.shields.io/badge/Features-28A745?style=for-the-badge&logo=sparkles&logoColor=white" alt="Features" />](#-features) ·
+[<img src="https://img.shields.io/badge/Install-FF6B35?style=for-the-badge&logo=rocket&logoColor=white" alt="Install" />](#-install) ·
+[<img src="https://img.shields.io/badge/Docs-6F42C1?style=for-the-badge&logo=readthedocs&logoColor=white" alt="Docs" />](docs/ARCHITECTURE.md) ·
+[<img src="https://img.shields.io/badge/Discussions-0D96F6?style=for-the-badge&logo=github&logoColor=white" alt="Discussions" />](https://github.com/djpfs/Macker/discussions)
+
+<br />
+
+</div>
 
 ---
 
-## Features
+<!-- Octicon "zap" — TL;DR -->
+<img src="https://img.shields.io/badge/-zap-FFE347?style=flat-square&logoColor=black" alt="" /> **TL;DR**
 
-- **Native macOS GUI (SwiftUI)** — Dashboard, Containers, Images, Builds,
-  Volumes, Networks, Compose, Activity Monitor and Settings.
-- **Docker-compatible CLI** — one binary, two modes. Symlink it as `docker`
-  and `docker-compose` for drop-in compatibility.
-- **Custom Compose engine** — YAML parser, `${VAR}` interpolation, `.env`
-  support, topological `depends_on` resolution, config-hash recreation,
-  service-name DNS via `/etc/hosts`, and health-check gating.
-- **Hot reload** — FSEvents → synthetic inotify bridge so Vite/webpack/nodemon
-  rebuild when you edit files on the host (virtiofs does not propagate inotify).
-- **Menu bar extra** — CPU/memory rings, per-container quick actions, and
-  customizable metrics.
-- **Storage management** — prune images, delete the buildkit builder, and full
-  cleanup from the GUI or CLI.
+> **Macker** replaces Docker Desktop on macOS by talking directly to Apple's
+> [`apple/container`](https://github.com/apple/container) runtime — no Docker
+> daemon, no license, no Electron, no gRPC stack.
+>
+> - <img src="https://img.shields.io/badge/-desktop-1E90FF?style=flat-square&logoColor=white" alt="" /> **Native SwiftUI GUI** — Dashboard, Containers, Images, Builds, Volumes, Networks, Compose, Activity Monitor, Settings.
+> - <img src="https://img.shields.io/badge/-terminal-000000?style=flat-square&logo=gnubash&logoColor=white" alt="" /> **Drop-in CLI** — symlink the binary as `docker` and `docker-compose`.
+> - <img src="https://img.shields.io/badge/-package-FF6B35?style=flat-square&logoColor=white" alt="" /> **Custom Compose engine** — `${VAR}` interpolation, `depends_on` with `service_healthy`, service-name DNS, config-hash recreation.
+> - <img src="https://img.shields.io/badge/-sync-28A745?style=flat-square&logoColor=white" alt="" /> **Hot reload** — synthetic inotify bridge over virtiofs so Vite/webpack/nodemon rebuild on host edits.
+> - <img src="https://img.shields.io/badge/-graph-8E44AD?style=flat-square&logoColor=white" alt="" /> **Menu bar extra** — CPU/memory rings and per-container quick actions.
 
 ---
 
-## How it works
+<!-- Octicon "image" — Screenshots -->
+<img src="https://img.shields.io/badge/-image-E91E63?style=flat-square&logoColor=white" alt="" /> **Screenshots**
 
-`apple/container` exposes a private XPC API (`container-apiserver`). Apple
-Docker talks to it through a lightweight XPC client — no gRPC, no NIO, no
-daemon of its own. Operations that have no XPC route (image build, pull, push,
-tag, prune) fall back to the `container` CLI.
+<br />
+
+<div align="center">
+<img src="docs/img/screenshot-01.png" alt="Dashboard" width="900" />
+<br /><sub><b>Dashboard</b> — runtime status, resource cards, live CPU/Memory/Block I/O charts, and active containers.</sub>
+</div>
+
+<br />
+
+<details>
+<summary><b><img src="https://img.shields.io/badge/-folder-F39C12?style=flat-square&logoColor=white" alt="" /> Containers &amp; details</b></summary>
+<br />
+
+<div align="center">
+<img src="docs/img/screenshot-02.png" alt="Containers list" width="900" />
+<br /><sub><b>Containers</b> — search &amp; filter sidebar with running containers grouped by compose project.</sub>
+</div>
+
+<br />
+
+<div align="center">
+<img src="docs/img/screenshot-03.png" alt="Container info" width="900" />
+<br /><sub><b>Container detail · Info</b> — configuration, ports, mounts, and compose labels.</sub>
+</div>
+
+<br />
+
+<div align="center">
+<img src="docs/img/screenshot-10.png" alt="Container settings" width="900" />
+<br /><sub><b>Container detail · Settings</b> — networks, published ports, resource limits, env vars, labels.</sub>
+</div>
+</details>
+
+<details>
+<summary><b><img src="https://img.shields.io/badge/-columns-17A2B8?style=flat-square&logoColor=white" alt="" /> Images · Builds · Volumes · Networks</b></summary>
+<br />
+
+<div align="center">
+<img src="docs/img/screenshot-04.png" alt="Images" width="900" />
+<br /><sub><b>Images</b> — repository, tag, ID, size, creation date, and platform.</sub>
+</div>
+
+<br />
+
+<div align="center">
+<img src="docs/img/screenshot-05.png" alt="Builds" width="900" />
+<br /><sub><b>Builds</b> — empty state with Build and Prune cache actions.</sub>
+</div>
+
+<br />
+
+<div align="center">
+<img src="docs/img/screenshot-06.png" alt="Volumes" width="900" />
+<br /><sub><b>Volumes</b> — name, driver, format, size, and created date.</sub>
+</div>
+
+<br />
+
+<div align="center">
+<img src="docs/img/screenshot-07.png" alt="Networks" width="900" />
+<br /><sub><b>Networks</b> — name, mode, subnet, and plugin.</sub>
+</div>
+</details>
+
+<details>
+<summary><b><img src="https://img.shields.io/badge/-menu-6C757D?style=flat-square&logoColor=white" alt="" /> Compose · Activity Monitor · Settings · Menu bar</b></summary>
+<br />
+
+<div align="center">
+<img src="docs/img/screenshot-08.png" alt="Compose" width="900" />
+<br /><sub><b>Compose</b> — current compose file, services with mapped ports, Up/Down, and a logs panel.</sub>
+</div>
+
+<br />
+
+<div align="center">
+<img src="docs/img/screenshot-09.png" alt="Activity Monitor" width="900" />
+<br /><sub><b>Activity Monitor</b> — aggregate CPU/Memory/Containers/Network cards plus per-container usage.</sub>
+</div>
+
+<br />
+
+<div align="center">
+<img src="docs/img/screenshot-11.png" alt="Settings General" width="900" />
+<br /><sub><b>Settings · General</b> — polling, launch at login, menu bar toggle, version, and install actions.</sub>
+</div>
+
+<br />
+
+<div align="center">
+<img src="docs/img/screenshot-12.png" alt="Settings Storage" width="900" />
+<br /><sub><b>Settings · Storage</b> — disk usage breakdown and cleanup actions.</sub>
+</div>
+
+<br />
+
+<div align="center">
+<img src="docs/img/screenshot-13.png" alt="Settings Menu bar" width="900" />
+<br /><sub><b>Settings · Menu bar</b> — visibility toggle, container list size, and metric customization.</sub>
+</div>
+
+<br />
+
+<div align="center">
+<img src="docs/img/screenshot-14.png" alt="Menu bar extra" width="900" />
+<br /><sub><b>Menu bar extra</b> — CPU/memory rings, per-project quick actions, and the Macker dropdown.</sub>
+</div>
+</details>
+
+---
+
+<!-- Octicon "sparkles" — Features -->
+<img src="https://img.shields.io/badge/-zap-FFE347?style=flat-square&logoColor=black" alt="" /> **Features**
+
+<table>
+<thead>
+<tr>
+<th width="33%"><img src="https://img.shields.io/badge/-desktop-1E90FF?style=flat-square&logoColor=white" alt="" /> Native GUI</th>
+<th width="33%"><img src="https://img.shields.io/badge/-terminal-000000?style=flat-square&logo=gnubash&logoColor=white" alt="" /> Docker-compatible CLI</th>
+<th width="33%"><img src="https://img.shields.io/badge/-package-FF6B35?style=flat-square&logoColor=white" alt="" /> Custom Compose engine</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SwiftUI app — Dashboard, Containers, Images, Builds, Volumes, Networks, Compose, Activity Monitor, Settings.</td>
+<td>One binary, two modes. Symlink it as <code>docker</code> and <code>docker-compose</code> for drop-in compatibility.</td>
+<td>YAML parser, <code>${VAR}</code> interpolation, <code>.env</code> support, topological <code>depends_on</code> with <code>service_healthy</code> gating.</td>
+</tr>
+<tr>
+<th><img src="https://img.shields.io/badge/-sync-28A745?style=flat-square&logoColor=white" alt="" /> Hot reload</th>
+<th><img src="https://img.shields.io/badge/-graph-8E44AD?style=flat-square&logoColor=white" alt="" /> Menu bar extra</th>
+<th><img src="https://img.shields.io/badge/-cleanup-DC3545?style=flat-square&logoColor=white" alt="" /> Storage management</th>
+</tr>
+<tr>
+<td>FSEvents → synthetic inotify bridge so Vite/webpack/nodemon rebuild on host edits over virtiofs.</td>
+<td>CPU/memory rings, per-container quick actions, and customizable metrics.</td>
+<td>Prune images, delete the buildkit builder, full cleanup — from GUI or CLI.</td>
+</tr>
+</tbody>
+</table>
+
+---
+
+<!-- Octicon "workflow" — How it works -->
+<img src="https://img.shields.io/badge/-workflow-6F42C1?style=flat-square&logoColor=white" alt="" /> **How it works**
+
+`apple/container` exposes a private XPC API (`container-apiserver`). Macker
+talks to it through a lightweight XPC client — **no gRPC, no NIO, no daemon of
+its own**. Operations that have no XPC route (image build, pull, push, tag,
+prune) fall back to the `container` CLI.
 
 The single `macker` binary dispatches on its arguments:
 
-- **No arguments** → launches the SwiftUI GUI.
-- **With arguments** → runs the headless CLI (ArgumentParser).
+| Invocation | Mode |
+|------------|------|
+| `macker` | Launches the SwiftUI GUI |
+| `macker <args>` | Runs the headless CLI (`ArgumentParser`) |
+
+<div align="center">
+<img src="docs/img/layers.jpeg" alt="Architecture layers — Presentation, Service, Backend, Platform" width="800" />
+</div>
+
+<img src="https://img.shields.io/badge/-book-6F42C1?style=flat-square&logoColor=white" alt="" /> Read the full module map in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ---
 
-## Architecture
+<!-- Octicon "checklist" — Requirements -->
+<img src="https://img.shields.io/badge/-checklist-20C997?style=flat-square&logoColor=white" alt="" /> **Requirements**
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    PRESENTATION LAYER                       │
-│  Views (SwiftUI)  ←  AppState (@Observable)                │
-├─────────────────────────────────────────────────────────────┤
-│                    SERVICE LAYER                            │
-│  AppState (polling, state aggregation)                      │
-│  ContainerService | ComposeEngine | HotReloadService        │
-├─────────────────────────────────────────────────────────────┤
-│                    BACKEND LAYER                            │
-│  XPCClient (primary) | ProcessRunner (fallback)             │
-│  LaunchdManager (daemon lifecycle)                          │
-├─────────────────────────────────────────────────────────────┤
-│                    PLATFORM LAYER                           │
-│  container-apiserver (XPC) | container CLI | virtiofs/VZ     │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### Modules
-
-| Module | Purpose |
-|--------|---------|
-| `AppleDockerApp` | SwiftUI GUI + dual-binary dispatch |
-| `AppleDockerCLI` | ArgumentParser root + `docker`/`compose` shim |
-| `ContainerBackend` | Lightweight XPC client for `container-apiserver` |
-| `ComposeEngine` | YAML parser, resolver, orchestrator, DNS sync, health checks |
-| `HotReloadService` | FSEvents → synthetic inotify bridge for virtiofs mounts |
+| | |
+|---|---|
+| **macOS** | 15+ (Sequoia or later) |
+| **CPU** | Apple Silicon (arm64) |
+| **Runtime** | [`apple/container`](https://github.com/apple/container) installed and running (`container-apiserver`) |
+| **XPC protocol** | pinned to **1.2.2** in `Package.swift` — client and runtime ship in lockstep |
 
 ---
 
-## Requirements
+<!-- Octicon "rocket" — Install -->
+<img src="https://img.shields.io/badge/-rocket-FF6B35?style=flat-square&logoColor=white" alt="" /> **Install**
 
-- **macOS 15+** (Sequoia or later)
-- **Apple Silicon** (arm64)
-- [apple/container](https://github.com/apple/container) installed and running
-  (`container-apiserver`). The protocol version is pinned to **1.2.2** in
-  `Package.swift` — client and runtime ship in lockstep.
+### Option A — Homebrew (recommended)
 
----
+<img src="https://img.shields.io/badge/-homebrew-FBB040?style=flat-square&logo=homebrew&logoColor=white" alt="" /> `brew install --cask djpfs/tools/macker`
 
-## Installation
+Installs the `Macker.app` bundle into `/Applications` (Launchpad/Spotlight
+discoverable). The cask lives in the
+[`homebrew-tools`](https://github.com/djpfs/homebrew-tools) tap and points to
+the latest stable `.pkg` from GitHub Releases.
 
-### Option A — Build from source
+To use the CLI as a drop-in `docker` replacement, symlink the bundled binary:
 
 ```bash
-git clone https://github.com/<you>/macker.git
-cd macker
-make build          # debug build
+ln -s /Applications/Macker.app/Contents/MacOS/macker /usr/local/bin/docker
+ln -s /Applications/Macker.app/Contents/MacOS/macker /usr/local/bin/docker-compose
 ```
 
 ### Option B — Install the CLI to your PATH
 
-```bash
-make install
-```
+<img src="https://img.shields.io/badge/-gear-6C757D?style=flat-square&logoColor=white" alt="" /> `make install`
 
 This installs `/usr/local/bin/macker`. To use it as a drop-in `docker`
 replacement:
@@ -134,12 +268,12 @@ ln -s /usr/local/bin/macker /usr/local/bin/docker
 ln -s /usr/local/bin/macker /usr/local/bin/docker-compose
 ```
 
-> The GUI also has a **Settings → Install CLI** button that does the same thing
-> (with an administrator password prompt).
+> <img src="https://img.shields.io/badge/-idea-FFC107?style=flat-square&logoColor=white" alt="" /> The GUI also has a **Settings → Install CLI** button that does the same
+> thing (with an administrator password prompt).
 
 ### Option C — Install the app bundle
 
-Build a `.pkg` installer and install it into `/Applications`:
+<img src="https://img.shields.io/badge/-package-FF6B35?style=flat-square&logoColor=white" alt="" /> Build a `.pkg` installer and install it into `/Applications`:
 
 ```bash
 ./Scripts/build-pkg.sh 1.0.0
@@ -147,17 +281,24 @@ open dist/Macker-1.0.0.pkg
 ```
 
 Or, from the GUI, use **Settings → Install app in /Applications** to copy the
-app bundle into `/Applications` (Launchpad/Spotlight discoverable).
+app bundle into `/Applications`.
 
-### Option D — Homebrew (planned)
+### Option D — Build from source
 
-A Homebrew formula is on the roadmap.
+<img src="https://img.shields.io/badge/-tools-6C757D?style=flat-square&logoColor=white" alt="" /> Clone and build:
+
+```bash
+git clone https://github.com/djpfs/macker.git
+cd macker
+make build          # debug build
+```
 
 ---
 
-## Usage
+<!-- Octicon "monitor" — Usage -->
+<img src="https://img.shields.io/badge/-desktop-1E90FF?style=flat-square&logoColor=white" alt="" /> **Usage**
 
-### GUI
+### <img src="https://img.shields.io/badge/-desktop-1E90FF?style=flat-square&logoColor=white" alt="" /> GUI
 
 ```bash
 macker
@@ -165,144 +306,62 @@ macker
 
 The GUI provides:
 
-- **Dashboard** — resource cards, daemon status, and CPU/memory/I/O charts with
-  configurable time intervals.
-- **Containers** — list with search, start/stop/restart, and a detail pane with
-  Info / Stats / Logs / Terminal / Files / Settings tabs.
-- **Images** — list, pull, and delete (with confirmation).
-- **Builds** — build history, build an image from a context, retry failed
-  builds, copy the build command, and prune the build cache.
-- **Volumes / Networks** — create, inspect, and delete.
-- **Compose** — load compose files (including drag & drop), up/down, logs, and
-  per-project actions.
-- **Activity Monitor** — per-container resource usage.
-- **Settings** — menu bar customization, storage cleanup, install CLI/app,
-  launch at login, and more.
+- <img src="https://img.shields.io/badge/-stack-17A2B8?style=flat-square&logoColor=white" alt="" /> **Dashboard** — resource cards, daemon status, and CPU/memory/I/O charts with configurable time intervals.
+- <img src="https://img.shields.io/badge/-container-2496ED?style=flat-square&logo=docker&logoColor=white" alt="" /> **Containers** — list with search, start/stop/restart, and a detail pane with Info / Stats / Logs / Terminal / Files / Settings tabs.
+- <img src="https://img.shields.io/badge/-file-6C757D?style=flat-square&logoColor=white" alt="" /> **Images** — list, pull, and delete (with confirmation).
+- <img src="https://img.shields.io/badge/-build-17A2B8?style=flat-square&logoColor=white" alt="" /> **Builds** — build history, build an image from a context, retry failed builds, copy the build command, and prune the build cache.
+- <img src="https://img.shields.io/badge/-storage-6F42C1?style=flat-square&logoColor=white" alt="" /> **Volumes / Networks** — create, inspect, and delete.
+- <img src="https://img.shields.io/badge/-compose-FF6B35?style=flat-square&logoColor=white" alt="" /> **Compose** — load compose files (including drag & drop), up/down, logs, and per-project actions.
+- <img src="https://img.shields.io/badge/-monitor-8E44AD?style=flat-square&logoColor=white" alt="" /> **Activity Monitor** — per-container resource usage.
+- <img src="https://img.shields.io/badge/-settings-6C757D?style=flat-square&logoColor=white" alt="" /> **Settings** — menu bar customization, storage cleanup, install CLI/app, launch at login, and more.
 
-### CLI
+### <img src="https://img.shields.io/badge/-terminal-000000?style=flat-square&logo=gnubash&logoColor=white" alt="" /> CLI
 
 ```bash
-macker version
-macker selftest
-macker system status
-macker docker ps
-macker compose up -d
+docker version
+docker selftest
+docker system status
+docker ps
+docker compose up -d
 ```
 
-### Docker compatibility
+### <img src="https://img.shields.io/badge/-sync-28A745?style=flat-square&logoColor=white" alt="" /> Docker compatibility
 
 Because the binary is meant to be symlinked as `docker`, unknown top-level
 subcommands are transparently routed to the docker shim. So these are
 equivalent:
 
 ```bash
-macker ps
 docker ps
+macker ps
 ```
 
----
-
-## Supported commands
-
-### `docker` (container)
-
-| Group | Commands |
-|-------|----------|
-| **Containers** | `ps`, `run`, `create`, `start`, `stop`, `restart`, `kill`, `rm`, `exec`, `logs`, `stats`, `wait`, `port`, `top`, `pause`, `unpause`, `cp`, `inspect`, `events` |
-| **Images** | `images`, `pull`, `push`, `build`, `tag`, `rmi`, `prune`, `load`, `save`, `search` |
-| **Volumes** | `volume create`, `volume ls`, `volume rm`, `volume inspect`, `volume prune` |
-| **Networks** | `network create`, `network ls`, `network rm`, `network inspect`, `network connect`, `network disconnect`, `network prune` |
-| **System** | `system df`, `system prune`, `system info`, `system version` |
-
-### `docker compose`
-
-| Command | Description |
-|---------|-------------|
-| `up` | Create and start services (`-d` to detach) |
-| `down` | Stop and remove services (`-v` removes volumes) |
-| `ps` | List project containers |
-| `logs` | Stream logs (`-f` follow, `--tail N`) |
-| `stop` / `start` / `restart` | Manage service lifecycle |
-| `pull` | Pull service images |
-| `build` | Build service images |
-| `create` | Create services without starting |
-| `exec` | Run a command in a service container |
-| `run` | Run a one-off command |
-| `config` | Print the resolved compose config as JSON |
-| `images` | List service images |
-| `kill` | Kill service containers |
-| `port` | Print the public port for a service |
-| `rm` | Remove stopped service containers |
-
-Unsupported commands fail with an explicit, actionable message.
+<img src="https://img.shields.io/badge/-book-6F42C1?style=flat-square&logoColor=white" alt="" /> Full command reference — see [docs/COMMANDS.md](docs/COMMANDS.md).
 
 ---
 
-## Compose engine
+<!-- Octicon "book" — Documentation -->
+<img src="https://img.shields.io/badge/-docs-6F42C1?style=flat-square&logoColor=white" alt="" /> **Documentation**
 
-`macker compose up`:
-
-1. Parses `docker-compose.yml` (Yams) with `${VAR}` interpolation and `.env`
-   support.
-2. Resolves `depends_on` topologically (including `service_healthy` gating).
-3. Creates and starts containers in dependency order.
-4. Writes `<service-name> <ip>` entries into each container's `/etc/hosts` so
-   services resolve each other by name.
-5. Recreates containers when their config hash changes.
-
-**Supported compose keys:** `services`, `image`, `build`, `ports`, `volumes`,
-`networks`, `environment`, `env_file`, `depends_on` (with `service_healthy`),
-`healthcheck`, `profiles`, `command`, `entrypoint`, `restart`, `labels`,
-`deploy.resources.limits`, `${VAR}` interpolation, `.env`.
+| | |
+|---|---|
+| <img src="https://img.shields.io/badge/-arch-6F42C1?style=flat-square&logoColor=white" alt="" /> [Architecture](docs/ARCHITECTURE.md) | Layers, modules, and how they fit together |
+| <img src="https://img.shields.io/badge/-terminal-000000?style=flat-square&logo=gnubash&logoColor=white" alt="" /> [Supported commands](docs/COMMANDS.md) | Full `docker` and `docker compose` reference |
+| <img src="https://img.shields.io/badge/-package-FF6B35?style=flat-square&logoColor=white" alt="" /> [Compose engine &amp; hot reload](docs/COMPOSE-ENGINE.md) | How `docker compose up` works and the virtiofs inotify bridge |
+| <img src="https://img.shields.io/badge/-desktop-1E90FF?style=flat-square&logoColor=white" alt="" /> [GUI features](docs/GUI.md) | Menu bar and storage &amp; cleanup |
+| <img src="https://img.shields.io/badge/-shield-DC3545?style=flat-square&logoColor=white" alt="" /> [Security](docs/SECURITY.md) | Security policy and notes |
+| <img src="https://img.shields.io/badge/-heart-E91E63?style=flat-square&logoColor=white" alt="" /> [Contributing](docs/CONTRIBUTING.md) | Development setup, code style, testing, releasing |
+| <img src="https://img.shields.io/badge/-rocket-FF6B35?style=flat-square&logoColor=white" alt="" /> [Roadmap &amp; limitations](docs/ROADMAP.md) | Known limitations and planned improvements |
 
 ---
 
-## Hot reload
-
-virtiofs does not propagate inotify events into the guest, so watch tools
-(Vite, webpack, nodemon, Air) never see host-side edits. Following the
-Colima/Lima `--mount-inotify` pattern:
-
-1. `FSEventWatcher` watches host directories (debounced, 100ms windows).
-2. `InotifyBridge` maps host paths to container paths and batches them.
-3. A tiny guest agent (`Resources/guest-agent`, built with
-   `Scripts/build-guest-agent.sh`) `touch`es each file.
-4. The Linux kernel emits inotify ATTRIB → watch tools rebuild.
-
-**Known limitations:** only ATTRIB events are synthesized (no MODIFY/CREATE/
-DELETE), and deletions on the host do not propagate.
-
----
-
-## Menu bar
-
-The menu bar extra shows customizable metrics (CPU, memory, container counts,
-etc.) with per-container quick actions. Configure which metrics appear and
-their order in **Settings → Menu bar**. The menu bar also includes an
-**Open Macker** action that focuses the existing window instead of
-spawning a new instance.
-
----
-
-## Storage & cleanup
-
-The native runtime stores each image as a full ext4 snapshot (no layer
-deduplication like Docker's overlay2), so storage can grow quickly. Macker
-provides:
-
-- **GUI:** Settings → Storage — disk usage, prune unused images, prune all
-  images, delete the buildkit builder, and full cleanup.
-- **CLI:** `docker system prune [-a] [--builder]` — `--builder` also deletes
-  the buildkit builder (frees the build cache).
-
----
-
-## Security
+<!-- Octicon "shield-lock" — Security -->
+<img src="https://img.shields.io/badge/-security-DC3545?style=flat-square&logoColor=white" alt="" /> **Security**
 
 - **Privilege escalation**: the Settings "Install CLI" and "Install app in
   /Applications" actions run `osascript` with administrator privileges. These
   are **user-initiated** and only copy the app's own binary into standard
-  locations. See [SECURITY.md](SECURITY.md).
+  locations. See [SECURITY.md](docs/SECURITY.md).
 - **No secrets**: the project contains no hardcoded credentials, API keys, or
   tokens. Do not commit `.env` files or `firebase-adminsdk-*.json`.
 - **Shell safety**: subprocesses are launched with argument arrays (not shell
@@ -310,7 +369,11 @@ provides:
 
 ---
 
-## Development
+<!-- Octicon "heart" — Contributing -->
+<img src="https://img.shields.io/badge/-heart-E91E63?style=flat-square&logoColor=white" alt="" /> **Contributing**
+
+Contributions are welcome — bug reports, feature requests, docs, and pull
+requests.
 
 ```bash
 make build          # debug build
@@ -326,63 +389,19 @@ CommandLineTools). The XPC protocol is not a stable public API — client and
 `container-apiserver` ship in lockstep; bump `containerVersion` in
 `Package.swift` when updating the runtime.
 
----
-
-## Limitations
-
-- **Apple Silicon only** — containers run as Linux VMs via Virtualization.framework.
-- **Protocol lockstep** — the XPC protocol is pinned to `apple/container 1.2.2`.
-- **No layer deduplication** — each image is a full snapshot; storage can grow
-  quickly (see [Storage & cleanup](#storage--cleanup)).
-- **Hot reload** — only ATTRIB events are synthesized.
-- **Not all docker commands** — unsupported commands fail with an explicit
-  message (e.g. `attach`, `update`, `history`, `rename`).
+<img src="https://img.shields.io/badge/-book-6F42C1?style=flat-square&logoColor=white" alt="" /> Full guide — see [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
 
 ---
 
-## Next steps
+<!-- Octicon "law" — License -->
+<img src="https://img.shields.io/badge/-law-6C757D?style=flat-square&logoColor=white" alt="" /> **License**
 
-Ideas and improvements on the roadmap, roughly ordered by impact:
-
-### Reliability & correctness
-- **Layer deduplication** — the native runtime stores each image as a full
-  snapshot. Investigate sharing base layers across images to cut storage.
-- **More docker commands** — implement `attach`, `update`, `history`, `rename`,
-  and `docker compose` gaps (`top`, `events`, `pause`).
-- **Hot reload fidelity** — synthesize MODIFY/CREATE/DELETE inotify events, not
-  just ATTRIB, and propagate host-side deletions.
-- **Graceful daemon handling** — auto-start `container-apiserver` if it is not
-  running, and surface a clear onboarding flow when the runtime is missing.
-
-### Distribution
-- **Homebrew formula** — publish `macker` as a cask/formula.
-- **Notarization & signing** — sign the `.pkg` with a Developer ID and notarize
-  it so Gatekeeper accepts it out of the box.
-- **Auto-update** — integrate Sparkle for seamless in-app updates.
-- **CI release pipeline** — build and attach signed `.pkg`/`.dmg` artifacts to
-  GitHub Releases on tag push.
-
-### GUI & UX
-- **Compose history** — persist recently used compose files for one-click
-  reload.
-- **Container settings** — richer per-container configuration (networks, port
-  mapping, resource limits) from the detail pane.
-- **Dashboard** — more chart types and per-container filtering.
-- **Localization** — add pt-BR and other locales.
-
-### Performance
-- **Faster polling** — batch stats collection and reduce refresh overhead for
-  large container counts.
-- **Build cache** — surface buildkit cache usage and per-image reclaimable
-  space in the GUI.
-
-### Testing
-- **More unit tests** — expand coverage for the compose parser, orchestrator,
-  and docker shim.
-- **Integration tests** — run against a real `container-apiserver` in CI.
-
----
-
-## License
+<div align="center">
 
 [MIT](LICENSE) © 2026 macker contributors
+
+<br />
+
+<sub>Made for the Apple Silicon crowd that just wants containers to work.</sub>
+
+</div>
