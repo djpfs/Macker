@@ -16,7 +16,7 @@ private struct SettingsModel {
     var ports: [PortEntry]
     var memoryMB: String
     var cpus: String
-    var envVars: [String]
+    var envVars: [EnvEntry]
     var labels: [String: String]
 
     struct PortEntry: Identifiable {
@@ -24,6 +24,35 @@ private struct SettingsModel {
         var hostPort: String
         var containerPort: String
         var proto: PublishProtocol
+    }
+
+    /// A key/value pair for an environment variable. The raw "KEY=VALUE" wire
+    /// format is split on first `=` so that values containing `=` are handled
+    /// correctly.
+    struct EnvEntry: Identifiable {
+        let id = UUID()
+        var key: String
+        var value: String
+
+        /// Reconstruct the "KEY=VALUE" string for the container configuration.
+        var rawString: String { "\(key)=\(value)" }
+
+        /// Parse a "KEY=VALUE" string, treating everything after the first `=`
+        /// as the value (so values may themselves contain `=`).
+        init(raw: String) {
+            if let range = raw.range(of: "=") {
+                key = String(raw[..<range.lowerBound])
+                value = String(raw[range.upperBound...])
+            } else {
+                key = raw
+                value = ""
+            }
+        }
+
+        init(key: String = "", value: String = "") {
+            self.key = key
+            self.value = value
+        }
     }
 
     init(container: ContainerSnapshot) {
@@ -44,7 +73,7 @@ private struct SettingsModel {
         } else {
             cpus = ""
         }
-        envVars = config.initProcess.environment
+        envVars = config.initProcess.environment.map { EnvEntry(raw: $0) }
         labels = config.labels
     }
 }
@@ -54,7 +83,8 @@ struct ContainerSettingsView: View {
     @Environment(AppState.self) private var state
     let container: ContainerSnapshot
     @State private var model: SettingsModel
-    @State private var newEnvVar = ""
+    @State private var newEnvKey = ""
+    @State private var newEnvValue = ""
     @State private var newLabelKey = ""
     @State private var newLabelValue = ""
     @State private var applyError: String?
@@ -218,16 +248,30 @@ struct ContainerSettingsView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Environment")
                 .font(.headline)
+            Text("Variables are stored as KEY=VALUE pairs. Values may contain `=`.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
 
-            ForEach(Array(model.envVars.enumerated()), id: \.offset) { index, entry in
+            // Header row
+            HStack(spacing: 8) {
+                Text("Key")
+                    .font(.caption.weight(.semibold))
+                    .frame(minWidth: 140, alignment: .leading)
+                Text("Value")
+                    .font(.caption.weight(.semibold))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            ForEach($model.envVars) { $entry in
                 HStack(spacing: 8) {
-                    TextField("KEY=VALUE", text: Binding(
-                        get: { model.envVars[index] },
-                        set: { model.envVars[index] = $0 }
-                    ))
-                    .textFieldStyle(.roundedBorder)
+                    TextField("KEY", text: $entry.key)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(minWidth: 140, maxWidth: 200)
+                    TextField("value", text: $entry.value)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: .infinity)
                     Button {
-                        model.envVars.remove(at: index)
+                        model.envVars.removeAll { $0.id == entry.id }
                     } label: {
                         Image(systemName: "minus.circle")
                     }
@@ -236,16 +280,22 @@ struct ContainerSettingsView: View {
             }
 
             HStack(spacing: 8) {
-                TextField("KEY=VALUE", text: $newEnvVar)
+                TextField("KEY", text: $newEnvKey)
                     .textFieldStyle(.roundedBorder)
+                    .frame(minWidth: 140, maxWidth: 200)
+                TextField("value", text: $newEnvValue)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: .infinity)
                 Button("Add") {
-                    let trimmed = newEnvVar.trimmingCharacters(in: .whitespaces)
-                    if !trimmed.isEmpty {
-                        model.envVars.append(trimmed)
-                        newEnvVar = ""
+                    let key = newEnvKey.trimmingCharacters(in: .whitespaces)
+                    if !key.isEmpty {
+                        model.envVars.append(SettingsModel.EnvEntry(key: key, value: newEnvValue))
+                        newEnvKey = ""
+                        newEnvValue = ""
                     }
                 }
                 .buttonStyle(.borderless)
+                .disabled(newEnvKey.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -356,7 +406,7 @@ struct ContainerSettingsView: View {
         }
 
         // Environment
-        config.initProcess.environment = model.envVars
+        config.initProcess.environment = model.envVars.map(\.rawString)
 
         // Labels
         config.labels = model.labels

@@ -18,6 +18,7 @@ struct ComposeView: View {
     @AppStorage("logTail") private var logTail = 100
     @State private var isBusy = false
     @State private var showFilePicker = false
+    @State private var logSearchText = ""
 
     private let orchestrator = ComposeOrchestrator()
 
@@ -197,6 +198,14 @@ struct ComposeView: View {
                 .disabled(state.composeLogLines.isEmpty)
                 .help("Copy logs to the clipboard")
                 Button {
+                    downloadLogs()
+                } label: {
+                    Label("Download", systemImage: "square.and.arrow.down")
+                }
+                .buttonStyle(.borderless)
+                .disabled(state.composeLogLines.isEmpty)
+                .help("Save logs to a file")
+                Button {
                     state.clearComposeLog()
                 } label: {
                     Label("Clear", systemImage: "trash")
@@ -215,8 +224,31 @@ struct ComposeView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
 
+            // Search bar
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                TextField("Filter logs…", text: $logSearchText)
+                    .textFieldStyle(.roundedBorder)
+                    .controlSize(.small)
+                if !logSearchText.isEmpty {
+                    Button {
+                        logSearchText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.borderless)
+                }
+                Text("\(filteredComposeLogLines.count) / \(state.composeLogLines.count)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 4)
+
             ScrollView {
-                Text(state.composeLogLines.joined(separator: "\n"))
+                Text(filteredComposeLogLines.joined(separator: "\n"))
                     .font(.system(.caption, design: .monospaced))
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .textSelection(.enabled)
@@ -224,6 +256,13 @@ struct ComposeView: View {
             }
             .frame(maxHeight: 220)
             .background(Color.black.opacity(0.05))
+        }
+    }
+
+    private var filteredComposeLogLines: [String] {
+        guard !logSearchText.isEmpty else { return state.composeLogLines }
+        return state.composeLogLines.filter {
+            $0.localizedCaseInsensitiveContains(logSearchText)
         }
     }
 
@@ -432,6 +471,16 @@ struct ComposeView: View {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
+    }
+
+    /// Save the current compose log lines to a file chosen by the user.
+    private func downloadLogs() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "compose-logs.txt"
+        panel.allowedContentTypes = [.plainText]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let content = state.composeLogLines.joined(separator: "\n")
+        try? content.write(to: url, atomically: true, encoding: .utf8)
     }
 
     /// Append the last 50 lines of each service's container output to the log

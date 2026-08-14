@@ -216,31 +216,69 @@ private struct StatsView: View {
     }
 }
 
-/// The Logs tab: streaming container logs.
+/// The Logs tab: streaming container logs with search, filter and download.
 private struct LogsView: View {
     let containerID: String
     @AppStorage("logTail") private var tail = 100
     @State private var lines: [String] = []
     @State private var follow = true
     @State private var task: Task<Void, Never>?
+    @State private var searchText = ""
+    @State private var showOnlyErrors = false
+
+    /// Lines that match the active search / error filter.
+    private var filteredLines: [String] {
+        lines.filter { line in
+            if showOnlyErrors && !line.localizedCaseInsensitiveContains("error") { return false }
+            if searchText.isEmpty { return true }
+            return line.localizedCaseInsensitiveContains(searchText)
+        }
+    }
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-                        Text(line)
-                            .font(.system(.caption, design: .monospaced))
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(spacing: 0) {
+            // Search / filter bar
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                TextField("Search logs…", text: $searchText)
+                    .textFieldStyle(.roundedBorder)
+                if !searchText.isEmpty {
+                    Button {
+                        searchText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
                     }
+                    .buttonStyle(.borderless)
                 }
-                .padding(8)
+                Toggle("Errors only", isOn: $showOnlyErrors)
+                    .toggleStyle(.checkbox)
+                    .controlSize(.small)
             }
-            .background(Color(nsColor: .textBackgroundColor))
-            .onChange(of: lines.count) {
-                if follow, let last = lines.indices.last {
-                    proxy.scrollTo(last, anchor: .bottom)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(.bar)
+
+            Divider()
+
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(Array(filteredLines.enumerated()), id: \.offset) { _, line in
+                            Text(attributedLine(line))
+                                .font(.system(.caption, design: .monospaced))
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    .padding(8)
+                }
+                .background(Color(nsColor: .textBackgroundColor))
+                .onChange(of: lines.count) {
+                    if follow, let last = filteredLines.indices.last {
+                        proxy.scrollTo(last, anchor: .bottom)
+                    }
                 }
             }
         }
@@ -250,17 +288,45 @@ private struct LogsView: View {
                     .toggleStyle(.switch)
                     .controlSize(.small)
                 Spacer()
+                Text("\(filteredLines.count) / \(lines.count) lines")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Stepper("Tail: \(tail)", value: $tail, in: 10...5000, step: 10)
                     .controlSize(.small)
                     .onChange(of: tail) { startStreaming() }
                 Button("Clear") { lines.removeAll() }
                     .controlSize(.small)
+                Button {
+                    downloadLogs()
+                } label: {
+                    Label("Download", systemImage: "square.and.arrow.down")
+                }
+                .controlSize(.small)
+                .buttonStyle(.bordered)
+                .disabled(lines.isEmpty)
+                .help("Save logs to a file")
             }
             .padding(8)
             .background(.bar)
         }
         .onAppear { startStreaming() }
         .onDisappear { task?.cancel() }
+    }
+
+    /// Highlight the search term in a log line using an AttributedString.
+    private func attributedLine(_ line: String) -> AttributedString {
+        var attr = AttributedString(line)
+        guard !searchText.isEmpty else { return attr }
+        var searchFrom = attr.startIndex
+        while searchFrom < attr.endIndex {
+            guard let range = attr[searchFrom...].range(
+                of: searchText,
+                options: .caseInsensitive
+            ) else { break }
+            attr[range].backgroundColor = .init(nsColor: .systemYellow.withAlphaComponent(0.4))
+            searchFrom = range.upperBound
+        }
+        return attr
     }
 
     private func startStreaming() {
@@ -279,5 +345,14 @@ private struct LogsView: View {
                 lines.append("[ERROR] \(error.localizedDescription)")
             }
         }
+    }
+
+    private func downloadLogs() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "\(containerID)-logs.txt"
+        panel.allowedContentTypes = [.plainText]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let content = lines.joined(separator: "\n")
+        try? content.write(to: url, atomically: true, encoding: .utf8)
     }
 }
