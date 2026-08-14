@@ -820,9 +820,9 @@ public struct ComposeOrchestrator: Sendable {
             resources: resources,
             readOnly: service.readOnly,
             useInit: service.initEnabled,
-            privileged: service.privileged,
             capAdd: service.capAdd,
             capDrop: service.capDrop,
+            privileged: service.privileged,
             securityOptions: service.securityOpt,
             shmSize: service.shmSize.flatMap(Self.parseMemory),
             stopSignal: service.stopSignal
