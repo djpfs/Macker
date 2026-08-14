@@ -218,23 +218,9 @@ The single `macker` binary dispatches on its arguments:
 | `macker` | Launches the SwiftUI GUI |
 | `macker <args>` | Runs the headless CLI (`ArgumentParser`) |
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                   PRESENTATION LAYER                        │
-│   Views (SwiftUI)  ←  AppState (@Observable)                │
-├─────────────────────────────────────────────────────────────┤
-│                    SERVICE LAYER                            │
-│   AppState (polling, state aggregation)                     │
-│   ContainerService | ComposeEngine | HotReloadService       │
-├─────────────────────────────────────────────────────────────┤
-│                    BACKEND LAYER                            │
-│   XPCClient (primary) | ProcessRunner (fallback)            │
-│   LaunchdManager (daemon lifecycle)                         │
-├─────────────────────────────────────────────────────────────┤
-│                   PLATFORM LAYER                            │
-│   container-apiserver (XPC) | container CLI | virtiofs/VZ   │
-└─────────────────────────────────────────────────────────────┘
-```
+<div align="center">
+<img src="docs/img/layers.jpeg" alt="Architecture layers — Presentation, Service, Backend, Platform" width="800" />
+</div>
 
 <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/book-16.svg" width="14" align="absmiddle" /> Read the full module map in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
