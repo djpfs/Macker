@@ -564,12 +564,17 @@ public struct ComposeOrchestrator: Sendable {
         var result: [ServiceConnections] = []
         for name in project.services.keys.sorted() {
             let containerName = Self.containerName(project: project.name, service: name, config: project.services[name])
-            guard let snapshot = try? await service.getContainer(id: containerName) else { continue }
-            result.append(ServiceConnections(
-                service: name,
-                attachments: snapshot.networks,
-                publishedPorts: snapshot.configuration.publishedPorts
-            ))
+            do {
+                let snapshot = try await service.getContainer(id: containerName)
+                result.append(ServiceConnections(
+                    service: name,
+                    attachments: snapshot.networks,
+                    publishedPorts: snapshot.configuration.publishedPorts
+                ))
+            } catch BackendError.notFound {
+                // Container hasn't been created yet — skip silently.
+                continue
+            }
         }
         return result
     }
@@ -782,7 +787,7 @@ public struct ComposeOrchestrator: Sendable {
             dns: service.dns.isEmpty && service.dnsSearch.isEmpty && service.dnsOpt.isEmpty
                 ? nil
                 : .init(
-                    nameservers: service.dns.isEmpty ? ContainerConfiguration.DNSConfiguration.defaultNameservers : service.dns,
+                    nameservers: service.dns,
                     searchDomains: service.dnsSearch,
                     options: service.dnsOpt
                   ),
