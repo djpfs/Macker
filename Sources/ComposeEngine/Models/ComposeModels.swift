@@ -81,6 +81,10 @@ public struct ServiceConfig: Sendable, Codable, Equatable {
     public var expose: [String]
     /// Volume mounts, e.g. `"./html:/usr/share/nginx/html:ro"`.
     public var volumes: [String]
+    /// Named secrets referenced by this service.
+    public var secrets: [String]
+    /// Named configs referenced by this service.
+    public var configs: [String]
     /// Networks this service joins.
     public var networks: [String]
     /// Services this service depends on, with their conditions.
@@ -125,6 +129,8 @@ public struct ServiceConfig: Sendable, Codable, Equatable {
     public var capAdd: [String]
     /// Linux capabilities to drop.
     public var capDrop: [String]
+    /// Extra security options.
+    public var securityOpt: [String]
     /// Size of /dev/shm.
     public var shmSize: String?
     /// Keep stdin open.
@@ -146,6 +152,8 @@ public struct ServiceConfig: Sendable, Codable, Equatable {
         ports: [String] = [],
         expose: [String] = [],
         volumes: [String] = [],
+        secrets: [String] = [],
+        configs: [String] = [],
         networks: [String] = [],
         dependsOn: [String: DependsOnCondition] = [:],
         healthcheck: HealthCheckConfig? = nil,
@@ -168,6 +176,7 @@ public struct ServiceConfig: Sendable, Codable, Equatable {
         dnsOpt: [String] = [],
         capAdd: [String] = [],
         capDrop: [String] = [],
+        securityOpt: [String] = [],
         shmSize: String? = nil,
         stdinOpen: Bool = false,
         tty: Bool = false,
@@ -183,6 +192,8 @@ public struct ServiceConfig: Sendable, Codable, Equatable {
         self.ports = ports
         self.expose = expose
         self.volumes = volumes
+        self.secrets = secrets
+        self.configs = configs
         self.networks = networks
         self.dependsOn = dependsOn
         self.healthcheck = healthcheck
@@ -205,6 +216,7 @@ public struct ServiceConfig: Sendable, Codable, Equatable {
         self.dnsOpt = dnsOpt
         self.capAdd = capAdd
         self.capDrop = capDrop
+        self.securityOpt = securityOpt
         self.shmSize = shmSize
         self.stdinOpen = stdinOpen
         self.tty = tty
@@ -222,6 +234,8 @@ public struct ServiceConfig: Sendable, Codable, Equatable {
         case ports
         case expose
         case volumes
+        case secrets
+        case configs
         case networks
         case dependsOn = "depends_on"
         case healthcheck
@@ -244,6 +258,7 @@ public struct ServiceConfig: Sendable, Codable, Equatable {
         case dnsOpt = "dns_opt"
         case capAdd = "cap_add"
         case capDrop = "cap_drop"
+        case securityOpt = "security_opt"
         case shmSize = "shm_size"
         case stdinOpen = "stdin_open"
         case tty
@@ -262,6 +277,8 @@ public struct ServiceConfig: Sendable, Codable, Equatable {
         ports = try c.decodeIfPresent(PortList.self, forKey: .ports)?.values ?? []
         expose = try c.decodeIfPresent([String].self, forKey: .expose) ?? []
         volumes = try c.decodeIfPresent([String].self, forKey: .volumes) ?? []
+        secrets = try c.decodeIfPresent(StringOrList.self, forKey: .secrets)?.values ?? []
+        configs = try c.decodeIfPresent(StringOrList.self, forKey: .configs)?.values ?? []
         networks = try c.decodeIfPresent(NetworkList.self, forKey: .networks)?.names ?? []
         dependsOn = try c.decodeIfPresent(DependsOnMap.self, forKey: .dependsOn)?.conditions ?? [:]
         healthcheck = try c.decodeIfPresent(HealthCheckConfig.self, forKey: .healthcheck)
@@ -284,6 +301,7 @@ public struct ServiceConfig: Sendable, Codable, Equatable {
         dnsOpt = try c.decodeIfPresent([String].self, forKey: .dnsOpt) ?? []
         capAdd = try c.decodeIfPresent([String].self, forKey: .capAdd) ?? []
         capDrop = try c.decodeIfPresent([String].self, forKey: .capDrop) ?? []
+        securityOpt = try c.decodeIfPresent([String].self, forKey: .securityOpt) ?? []
         shmSize = try c.decodeIfPresent(String.self, forKey: .shmSize)
         stdinOpen = try c.decodeIfPresent(Bool.self, forKey: .stdinOpen) ?? false
         tty = try c.decodeIfPresent(Bool.self, forKey: .tty) ?? false

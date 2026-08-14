@@ -45,6 +45,10 @@ public struct ContainerConfiguration: Sendable, Codable {
     public var capAdd: [String]
     /// Linux capabilities to drop (normalized CAP_* strings, or "ALL").
     public var capDrop: [String]
+    /// Run the container in privileged mode.
+    public var privileged: Bool
+    /// Extra security options, e.g. seccomp/apparmor labels.
+    public var securityOptions: [String]
     /// Size of /dev/shm in bytes. When nil, the default size is used.
     public var shmSize: UInt64?
     /// Signal to send to the container process on stop (from image config).
@@ -142,6 +146,8 @@ public struct ContainerConfiguration: Sendable, Codable {
         case useInit
         case capAdd
         case capDrop
+        case privileged
+        case securityOptions
         case shmSize
         case stopSignal
         case maskedPaths
@@ -174,6 +180,8 @@ public struct ContainerConfiguration: Sendable, Codable {
         useInit = try container.decodeIfPresent(Bool.self, forKey: .useInit) ?? false
         capAdd = try container.decodeIfPresent([String].self, forKey: .capAdd) ?? []
         capDrop = try container.decodeIfPresent([String].self, forKey: .capDrop) ?? []
+        privileged = try container.decodeIfPresent(Bool.self, forKey: .privileged) ?? false
+        securityOptions = try container.decodeIfPresent([String].self, forKey: .securityOptions) ?? []
         shmSize = try container.decodeIfPresent(UInt64.self, forKey: .shmSize)
         stopSignal = try container.decodeIfPresent(String.self, forKey: .stopSignal)
         maskedPaths = try container.decodeIfPresent([String].self, forKey: .maskedPaths)
@@ -202,6 +210,8 @@ public struct ContainerConfiguration: Sendable, Codable {
         useInit: Bool = false,
         capAdd: [String] = [],
         capDrop: [String] = [],
+        privileged: Bool = false,
+        securityOptions: [String] = [],
         shmSize: UInt64? = nil,
         stopSignal: String? = nil,
         creationDate: Date = Date()
@@ -226,6 +236,8 @@ public struct ContainerConfiguration: Sendable, Codable {
         self.useInit = useInit
         self.capAdd = capAdd
         self.capDrop = capDrop
+        self.privileged = privileged
+        self.securityOptions = securityOptions
         self.shmSize = shmSize
         self.stopSignal = stopSignal
         self.maskedPaths = nil

@@ -5,7 +5,8 @@
 | Group | Commands |
 |-------|----------|
 | **Containers** | `ps`, `run`, `create`, `start`, `stop`, `restart`, `kill`, `rm`, `exec`, `logs`, `stats`, `wait`, `port`, `top`, `pause`, `unpause`, `cp`, `inspect`, `events` |
-| **Images** | `images`, `pull`, `push`, `build`, `tag`, `rmi`, `prune`, `load`, `save`, `search` |
+| **Images** | `images`, `pull`, `push`, `build`, `tag`, `rmi`, `prune`, `load`, `save`, `search`, `scan` |
+| **Secrets** | `secret ls`, `secret create`, `secret inspect`, `secret rm` |
 | **Volumes** | `volume create`, `volume ls`, `volume rm`, `volume inspect`, `volume prune` |
 | **Networks** | `network create`, `network ls`, `network rm`, `network inspect`, `network connect`, `network disconnect`, `network prune` |
 | **System** | `system df`, `system prune`, `system info`, `system version` |

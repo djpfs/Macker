@@ -22,6 +22,8 @@ public enum ComposeParseError: Error, LocalizedError, Equatable {
     case unknownDependency(String, String)
     case unknownNetwork(String, String)
     case unknownVolume(String, String)
+    case unknownSecret(String, String)
+    case unknownConfig(String, String)
     case circularDependency([String])
     case interpolationError(String, String)
 
@@ -39,6 +41,10 @@ public enum ComposeParseError: Error, LocalizedError, Equatable {
             return "compose: service '\(service)' references undefined network '\(network)'"
         case .unknownVolume(let service, let volume):
             return "compose: service '\(service)' references undefined volume '\(volume)'"
+        case .unknownSecret(let service, let secret):
+            return "compose: service '\(service)' references undefined secret '\(secret)'"
+        case .unknownConfig(let service, let config):
+            return "compose: service '\(service)' references undefined config '\(config)'"
         case .circularDependency(let chain):
             return "compose: circular dependency: \(chain.joined(separator: " -> "))"
         case .interpolationError(let variable, let message):
@@ -67,7 +73,7 @@ public struct ComposeParser: Sendable {
 
     /// Parse a compose YAML string. `env` supplies interpolation variables
     /// (the process environment is always consulted first).
-    public func parse(yaml: String, env: [String: String] = [:], baseDirectory: String = ".") throws -> ComposeProject {
+    public func parse(yaml: String, env: [String: String] = [:], baseDirectory: String = ".", profiles: Set<String>? = nil) throws -> ComposeProject {
         let tree: Any
         do {
             tree = try Yams.load(yaml: yaml) ?? [:]
@@ -93,6 +99,11 @@ public struct ComposeParser: Sendable {
         }
 
         var result = project
+        if let profiles {
+            result.services = result.services.filter { _, service in
+                service.profiles.isEmpty || service.profiles.contains { profiles.contains($0) }
+            }
+        }
         if result.name.isEmpty {
             result.name = URL(fileURLWithPath: baseDirectory).lastPathComponent
         }
@@ -119,6 +130,12 @@ public struct ComposeParser: Sendable {
             }
             for volume in namedVolumes(in: service.volumes) where project.volumes[volume] == nil {
                 throw ComposeParseError.unknownVolume(name, volume)
+            }
+            for secret in service.secrets where project.secrets[secret] == nil {
+                throw ComposeParseError.unknownSecret(name, secret)
+            }
+            for config in service.configs where project.configs[config] == nil {
+                throw ComposeParseError.unknownConfig(name, config)
             }
         }
         _ = try ServiceResolver.resolve(project)
