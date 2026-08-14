@@ -16,6 +16,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
     case volumes = "Volumes"
     case networks = "Networks"
     case compose = "Compose"
+    case editor = "Editor"
     case activity = "Activity Monitor"
     case settings = "Settings"
 
@@ -30,6 +31,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
         case .volumes: "externaldrive"
         case .networks: "network"
         case .compose: "square.stack.3d.up"
+        case .editor: "doc.plaintext"
         case .activity: "waveform.path.ecg"
         case .settings: "gearshape"
         }
@@ -121,6 +123,8 @@ private struct RootView: View {
                 NetworkListView()
             case .compose:
                 ComposeView()
+            case .editor:
+                ComposeEditorView()
             case .activity:
                 ActivityMonitorView()
             case .settings:

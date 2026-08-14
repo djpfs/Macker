@@ -84,8 +84,8 @@ final class AppState {
     /// History of image builds, shown in the Builds tab (most recent first).
     var buildHistory: [BuildRecord] = []
     /// Persistent terminal sessions, keyed by container ID. Kept here so the
-    /// terminal survives tab switches.
-    var terminalSessions: [String: ContainerTerminalSession] = [:]
+    /// terminal survives tab switches. Each container may have multiple sessions.
+    var terminalSessions: [String: [ContainerTerminalSession]] = [:]
 
     // MARK: - Build tracking
 
@@ -357,15 +357,33 @@ final class AppState {
 
     // MARK: - Terminal sessions
 
-    /// Return the persistent terminal session for a container, creating it on
-    /// first use.
-    func terminalSession(for containerID: String) -> ContainerTerminalSession {
-        if let session = terminalSessions[containerID] {
-            return session
+    /// Return the list of terminal sessions for a container, creating a
+    /// default first session if none exist yet.
+    func terminalSessions(for containerID: String) -> [ContainerTerminalSession] {
+        if let sessions = terminalSessions[containerID], !sessions.isEmpty {
+            return sessions
         }
-        let session = ContainerTerminalSession(containerID: containerID)
-        terminalSessions[containerID] = session
+        let session = ContainerTerminalSession(containerID: containerID, sessionLabel: "Session 1")
+        terminalSessions[containerID] = [session]
+        return [session]
+    }
+
+    /// Add a new terminal session for a container and return it.
+    @discardableResult
+    func addTerminalSession(for containerID: String) -> ContainerTerminalSession {
+        let existing = terminalSessions[containerID] ?? []
+        let label = "Session \(existing.count + 1)"
+        let session = ContainerTerminalSession(containerID: containerID, sessionLabel: label)
+        terminalSessions[containerID] = existing + [session]
         return session
+    }
+
+    /// Remove a terminal session for a container.
+    func removeTerminalSession(_ session: ContainerTerminalSession) {
+        guard var sessions = terminalSessions[session.containerID] else { return }
+        sessions.removeAll { $0 === session }
+        session.disconnect()
+        terminalSessions[session.containerID] = sessions
     }
 
     // MARK: - Container actions

@@ -14,13 +14,17 @@ import ContainerBackend
 @Observable
 final class ContainerTerminalSession {
     let containerID: String
+    let sessionLabel: String
+    /// Stable identity for use in `ForEach` and equality checks.
+    let objectID = UUID()
     var output: [String] = []
     var isConnected = false
     private var stdinHandle: FileHandle?
     private var task: Task<Void, Never>?
 
-    init(containerID: String) {
+    init(containerID: String, sessionLabel: String = "Session 1") {
         self.containerID = containerID
+        self.sessionLabel = sessionLabel
     }
 
     /// Create and start the interactive shell, then stream its output.
