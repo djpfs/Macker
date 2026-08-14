@@ -47,6 +47,30 @@ final class ComposeEngineTests: XCTestCase {
         XCTAssertNotNil(project.services["web"])
         XCTAssertEqual(project.services["web"]?.secrets, ["db_password"])
         XCTAssertEqual(project.services["web"]?.configs, ["app_config"])
+
+        let missingSecretYAML = """
+        services:
+          web:
+            image: nginx
+            secrets: [missing_secret]
+        """
+        XCTAssertThrowsError(try ComposeParser().parse(yaml: missingSecretYAML)) { error in
+            guard case ComposeParseError.unknownSecret("web", "missing_secret") = error else {
+                return XCTFail("expected unknownSecret, got \(error)")
+            }
+        }
+
+        let missingConfigYAML = """
+        services:
+          web:
+            image: nginx
+            configs: [missing_config]
+        """
+        XCTAssertThrowsError(try ComposeParser().parse(yaml: missingConfigYAML)) { error in
+            guard case ComposeParseError.unknownConfig("web", "missing_config") = error else {
+                return XCTFail("expected unknownConfig, got \(error)")
+            }
+        }
     }
 
     func testUndefinedSecretThrowsError() throws {
