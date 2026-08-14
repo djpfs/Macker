@@ -1,23 +1,10 @@
-<style>
-/* Keep the SVG icons legible on GitHub's dark theme. The Octicons and
-   Simple-Icons SVGs are monochrome black by default; invert them when
-   the viewer prefers a dark color scheme. */
-@media (prefers-color-scheme: dark) {
-  img[src*="primer/octicons"],
-  img[src*="simple-icons"] {
-    filter: invert(1) hue-rotate(180deg);
-  }
-}
-</style>
-
 <div align="center">
 
 <img src="docs/img/screenshot-01.png" alt="Macker Dashboard" width="900" />
 
 <br />
 
-<!-- https://simpleicons.org/?q=docker -->
-<img src="https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/docker.svg" alt="Docker" width="64" height="64" />
+<img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker" />
 
 # Macker
 
@@ -55,22 +42,22 @@
 ---
 
 <!-- Octicon "zap" — TL;DR -->
-<img src="https://raw.githubusercontent.com/primer/octicons/main/icons/zap-16.svg" width="22" align="absmiddle" /> **TL;DR**
+<img src="https://img.shields.io/badge/-zap-FFE347?style=flat-square&logoColor=black" alt="" /> **TL;DR**
 
 > **Macker** replaces Docker Desktop on macOS by talking directly to Apple's
 > [`apple/container`](https://github.com/apple/container) runtime — no Docker
 > daemon, no license, no Electron, no gRPC stack.
 >
-> - <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/device-desktop-16.svg" width="14" align="absmiddle" /> **Native SwiftUI GUI** — Dashboard, Containers, Images, Builds, Volumes, Networks, Compose, Activity Monitor, Settings.
-> - <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/terminal-16.svg" width="14" align="absmiddle" /> **Drop-in CLI** — symlink the binary as `docker` and `docker-compose`.
-> - <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/package-16.svg" width="14" align="absmiddle" /> **Custom Compose engine** — `${VAR}` interpolation, `depends_on` with `service_healthy`, service-name DNS, config-hash recreation.
-> - <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/sync-16.svg" width="14" align="absmiddle" /> **Hot reload** — synthetic inotify bridge over virtiofs so Vite/webpack/nodemon rebuild on host edits.
-> - <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/graph-16.svg" width="14" align="absmiddle" /> **Menu bar extra** — CPU/memory rings and per-container quick actions.
+> - <img src="https://img.shields.io/badge/-desktop-1E90FF?style=flat-square&logoColor=white" alt="" /> **Native SwiftUI GUI** — Dashboard, Containers, Images, Builds, Volumes, Networks, Compose, Activity Monitor, Settings.
+> - <img src="https://img.shields.io/badge/-terminal-000000?style=flat-square&logo=gnubash&logoColor=white" alt="" /> **Drop-in CLI** — symlink the binary as `docker` and `docker-compose`.
+> - <img src="https://img.shields.io/badge/-package-FF6B35?style=flat-square&logoColor=white" alt="" /> **Custom Compose engine** — `${VAR}` interpolation, `depends_on` with `service_healthy`, service-name DNS, config-hash recreation.
+> - <img src="https://img.shields.io/badge/-sync-28A745?style=flat-square&logoColor=white" alt="" /> **Hot reload** — synthetic inotify bridge over virtiofs so Vite/webpack/nodemon rebuild on host edits.
+> - <img src="https://img.shields.io/badge/-graph-8E44AD?style=flat-square&logoColor=white" alt="" /> **Menu bar extra** — CPU/memory rings and per-container quick actions.
 
 ---
 
 <!-- Octicon "image" — Screenshots -->
-<img src="https://raw.githubusercontent.com/primer/octicons/main/icons/image-16.svg" width="22" align="absmiddle" /> **Screenshots**
+<img src="https://img.shields.io/badge/-image-E91E63?style=flat-square&logoColor=white" alt="" /> **Screenshots**
 
 <br />
 
@@ -82,7 +69,7 @@
 <br />
 
 <details>
-<summary><b><img src="https://raw.githubusercontent.com/primer/octicons/main/icons/file-directory-16.svg" width="14" align="absmiddle" /> Containers &amp; details</b></summary>
+<summary><b><img src="https://img.shields.io/badge/-folder-F39C12?style=flat-square&logoColor=white" alt="" /> Containers &amp; details</b></summary>
 <br />
 
 <div align="center">
@@ -106,7 +93,7 @@
 </details>
 
 <details>
-<summary><b><img src="https://raw.githubusercontent.com/primer/octicons/main/icons/columns-16.svg" width="14" align="absmiddle" /> Images · Builds · Volumes · Networks</b></summary>
+<summary><b><img src="https://img.shields.io/badge/-columns-17A2B8?style=flat-square&logoColor=white" alt="" /> Images · Builds · Volumes · Networks</b></summary>
 <br />
 
 <div align="center">
@@ -137,7 +124,7 @@
 </details>
 
 <details>
-<summary><b><img src="https://raw.githubusercontent.com/primer/octicons/main/icons/three-bars-16.svg" width="14" align="absmiddle" /> Compose · Activity Monitor · Settings · Menu bar</b></summary>
+<summary><b><img src="https://img.shields.io/badge/-menu-6C757D?style=flat-square&logoColor=white" alt="" /> Compose · Activity Monitor · Settings · Menu bar</b></summary>
 <br />
 
 <div align="center">
@@ -184,14 +171,14 @@
 ---
 
 <!-- Octicon "sparkles" — Features -->
-<img src="https://raw.githubusercontent.com/primer/octicons/main/icons/zap-16.svg" width="22" align="absmiddle" /> **Features**
+<img src="https://img.shields.io/badge/-zap-FFE347?style=flat-square&logoColor=black" alt="" /> **Features**
 
 <table>
 <thead>
 <tr>
-<th width="33%"><img src="https://raw.githubusercontent.com/primer/octicons/main/icons/device-desktop-16.svg" width="16" align="absmiddle" /> Native GUI</th>
-<th width="33%"><img src="https://raw.githubusercontent.com/primer/octicons/main/icons/terminal-16.svg" width="16" align="absmiddle" /> Docker-compatible CLI</th>
-<th width="33%"><img src="https://raw.githubusercontent.com/primer/octicons/main/icons/package-16.svg" width="16" align="absmiddle" /> Custom Compose engine</th>
+<th width="33%"><img src="https://img.shields.io/badge/-desktop-1E90FF?style=flat-square&logoColor=white" alt="" /> Native GUI</th>
+<th width="33%"><img src="https://img.shields.io/badge/-terminal-000000?style=flat-square&logo=gnubash&logoColor=white" alt="" /> Docker-compatible CLI</th>
+<th width="33%"><img src="https://img.shields.io/badge/-package-FF6B35?style=flat-square&logoColor=white" alt="" /> Custom Compose engine</th>
 </tr>
 </thead>
 <tbody>
@@ -201,9 +188,9 @@
 <td>YAML parser, <code>${VAR}</code> interpolation, <code>.env</code> support, topological <code>depends_on</code> with <code>service_healthy</code> gating.</td>
 </tr>
 <tr>
-<th><img src="https://raw.githubusercontent.com/primer/octicons/main/icons/sync-16.svg" width="16" align="absmiddle" /> Hot reload</th>
-<th><img src="https://raw.githubusercontent.com/primer/octicons/main/icons/graph-16.svg" width="16" align="absmiddle" /> Menu bar extra</th>
-<th><img src="https://raw.githubusercontent.com/primer/octicons/main/icons/trash-16.svg" width="16" align="absmiddle" /> Storage management</th>
+<th><img src="https://img.shields.io/badge/-sync-28A745?style=flat-square&logoColor=white" alt="" /> Hot reload</th>
+<th><img src="https://img.shields.io/badge/-graph-8E44AD?style=flat-square&logoColor=white" alt="" /> Menu bar extra</th>
+<th><img src="https://img.shields.io/badge/-cleanup-DC3545?style=flat-square&logoColor=white" alt="" /> Storage management</th>
 </tr>
 <tr>
 <td>FSEvents → synthetic inotify bridge so Vite/webpack/nodemon rebuild on host edits over virtiofs.</td>
@@ -216,7 +203,7 @@
 ---
 
 <!-- Octicon "workflow" — How it works -->
-<img src="https://raw.githubusercontent.com/primer/octicons/main/icons/workflow-16.svg" width="22" align="absmiddle" /> **How it works**
+<img src="https://img.shields.io/badge/-workflow-6F42C1?style=flat-square&logoColor=white" alt="" /> **How it works**
 
 `apple/container` exposes a private XPC API (`container-apiserver`). Macker
 talks to it through a lightweight XPC client — **no gRPC, no NIO, no daemon of
@@ -234,12 +221,12 @@ The single `macker` binary dispatches on its arguments:
 <img src="docs/img/layers.jpeg" alt="Architecture layers — Presentation, Service, Backend, Platform" width="800" />
 </div>
 
-<img src="https://raw.githubusercontent.com/primer/octicons/main/icons/book-16.svg" width="14" align="absmiddle" /> Read the full module map in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+<img src="https://img.shields.io/badge/-book-6F42C1?style=flat-square&logoColor=white" alt="" /> Read the full module map in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ---
 
 <!-- Octicon "checklist" — Requirements -->
-<img src="https://raw.githubusercontent.com/primer/octicons/main/icons/checklist-16.svg" width="22" align="absmiddle" /> **Requirements**
+<img src="https://img.shields.io/badge/-checklist-20C997?style=flat-square&logoColor=white" alt="" /> **Requirements**
 
 | | |
 |---|---|
@@ -251,11 +238,11 @@ The single `macker` binary dispatches on its arguments:
 ---
 
 <!-- Octicon "rocket" — Install -->
-<img src="https://raw.githubusercontent.com/primer/octicons/main/icons/rocket-16.svg" width="22" align="absmiddle" /> **Install**
+<img src="https://img.shields.io/badge/-rocket-FF6B35?style=flat-square&logoColor=white" alt="" /> **Install**
 
 ### Option A — Homebrew (recommended)
 
-<img src="https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/homebrew.svg" width="14" align="absmiddle" /> `brew install --cask djpfs/tools/macker`
+<img src="https://img.shields.io/badge/-homebrew-FBB040?style=flat-square&logo=homebrew&logoColor=white" alt="" /> `brew install --cask djpfs/tools/macker`
 
 Installs the `Macker.app` bundle into `/Applications` (Launchpad/Spotlight
 discoverable). The cask lives in the
@@ -271,7 +258,7 @@ ln -s /Applications/Macker.app/Contents/MacOS/macker /usr/local/bin/docker-compo
 
 ### Option B — Install the CLI to your PATH
 
-<img src="https://raw.githubusercontent.com/primer/octicons/main/icons/gear-16.svg" width="14" align="absmiddle" /> `make install`
+<img src="https://img.shields.io/badge/-gear-6C757D?style=flat-square&logoColor=white" alt="" /> `make install`
 
 This installs `/usr/local/bin/macker`. To use it as a drop-in `docker`
 replacement:
@@ -281,12 +268,12 @@ ln -s /usr/local/bin/macker /usr/local/bin/docker
 ln -s /usr/local/bin/macker /usr/local/bin/docker-compose
 ```
 
-> <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/light-bulb-16.svg" width="14" align="absmiddle" /> The GUI also has a **Settings → Install CLI** button that does the same
+> <img src="https://img.shields.io/badge/-idea-FFC107?style=flat-square&logoColor=white" alt="" /> The GUI also has a **Settings → Install CLI** button that does the same
 > thing (with an administrator password prompt).
 
 ### Option C — Install the app bundle
 
-<img src="https://raw.githubusercontent.com/primer/octicons/main/icons/package-16.svg" width="14" align="absmiddle" /> Build a `.pkg` installer and install it into `/Applications`:
+<img src="https://img.shields.io/badge/-package-FF6B35?style=flat-square&logoColor=white" alt="" /> Build a `.pkg` installer and install it into `/Applications`:
 
 ```bash
 ./Scripts/build-pkg.sh 1.0.0
@@ -298,7 +285,7 @@ app bundle into `/Applications`.
 
 ### Option D — Build from source
 
-<img src="https://raw.githubusercontent.com/primer/octicons/main/icons/tools-16.svg" width="14" align="absmiddle" /> Clone and build:
+<img src="https://img.shields.io/badge/-tools-6C757D?style=flat-square&logoColor=white" alt="" /> Clone and build:
 
 ```bash
 git clone https://github.com/djpfs/macker.git
@@ -309,9 +296,9 @@ make build          # debug build
 ---
 
 <!-- Octicon "monitor" — Usage -->
-<img src="https://raw.githubusercontent.com/primer/octicons/main/icons/device-desktop-16.svg" width="22" align="absmiddle" /> **Usage**
+<img src="https://img.shields.io/badge/-desktop-1E90FF?style=flat-square&logoColor=white" alt="" /> **Usage**
 
-### <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/device-desktop-16.svg" width="14" align="absmiddle" /> GUI
+### <img src="https://img.shields.io/badge/-desktop-1E90FF?style=flat-square&logoColor=white" alt="" /> GUI
 
 ```bash
 macker
@@ -319,16 +306,16 @@ macker
 
 The GUI provides:
 
-- <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/stack-16.svg" width="12" align="absmiddle" /> **Dashboard** — resource cards, daemon status, and CPU/memory/I/O charts with configurable time intervals.
-- <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/container-16.svg" width="12" align="absmiddle" /> **Containers** — list with search, start/stop/restart, and a detail pane with Info / Stats / Logs / Terminal / Files / Settings tabs.
-- <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/file-16.svg" width="12" align="absmiddle" /> **Images** — list, pull, and delete (with confirmation).
-- <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/tools-16.svg" width="12" align="absmiddle" /> **Builds** — build history, build an image from a context, retry failed builds, copy the build command, and prune the build cache.
-- <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/database-16.svg" width="12" align="absmiddle" /> **Volumes / Networks** — create, inspect, and delete.
-- <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/package-16.svg" width="12" align="absmiddle" /> **Compose** — load compose files (including drag & drop), up/down, logs, and per-project actions.
-- <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/graph-16.svg" width="12" align="absmiddle" /> **Activity Monitor** — per-container resource usage.
-- <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/gear-16.svg" width="12" align="absmiddle" /> **Settings** — menu bar customization, storage cleanup, install CLI/app, launch at login, and more.
+- <img src="https://img.shields.io/badge/-stack-17A2B8?style=flat-square&logoColor=white" alt="" /> **Dashboard** — resource cards, daemon status, and CPU/memory/I/O charts with configurable time intervals.
+- <img src="https://img.shields.io/badge/-container-2496ED?style=flat-square&logo=docker&logoColor=white" alt="" /> **Containers** — list with search, start/stop/restart, and a detail pane with Info / Stats / Logs / Terminal / Files / Settings tabs.
+- <img src="https://img.shields.io/badge/-file-6C757D?style=flat-square&logoColor=white" alt="" /> **Images** — list, pull, and delete (with confirmation).
+- <img src="https://img.shields.io/badge/-build-17A2B8?style=flat-square&logoColor=white" alt="" /> **Builds** — build history, build an image from a context, retry failed builds, copy the build command, and prune the build cache.
+- <img src="https://img.shields.io/badge/-storage-6F42C1?style=flat-square&logoColor=white" alt="" /> **Volumes / Networks** — create, inspect, and delete.
+- <img src="https://img.shields.io/badge/-compose-FF6B35?style=flat-square&logoColor=white" alt="" /> **Compose** — load compose files (including drag & drop), up/down, logs, and per-project actions.
+- <img src="https://img.shields.io/badge/-monitor-8E44AD?style=flat-square&logoColor=white" alt="" /> **Activity Monitor** — per-container resource usage.
+- <img src="https://img.shields.io/badge/-settings-6C757D?style=flat-square&logoColor=white" alt="" /> **Settings** — menu bar customization, storage cleanup, install CLI/app, launch at login, and more.
 
-### <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/terminal-16.svg" width="14" align="absmiddle" /> CLI
+### <img src="https://img.shields.io/badge/-terminal-000000?style=flat-square&logo=gnubash&logoColor=white" alt="" /> CLI
 
 ```bash
 docker version
@@ -338,7 +325,7 @@ docker ps
 docker compose up -d
 ```
 
-### <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/sync-16.svg" width="14" align="absmiddle" /> Docker compatibility
+### <img src="https://img.shields.io/badge/-sync-28A745?style=flat-square&logoColor=white" alt="" /> Docker compatibility
 
 Because the binary is meant to be symlinked as `docker`, unknown top-level
 subcommands are transparently routed to the docker shim. So these are
@@ -349,27 +336,27 @@ docker ps
 macker ps
 ```
 
-<img src="https://raw.githubusercontent.com/primer/octicons/main/icons/book-16.svg" width="14" align="absmiddle" /> Full command reference — see [docs/COMMANDS.md](docs/COMMANDS.md).
+<img src="https://img.shields.io/badge/-book-6F42C1?style=flat-square&logoColor=white" alt="" /> Full command reference — see [docs/COMMANDS.md](docs/COMMANDS.md).
 
 ---
 
 <!-- Octicon "book" — Documentation -->
-<img src="https://raw.githubusercontent.com/primer/octicons/main/icons/book-16.svg" width="22" align="absmiddle" /> **Documentation**
+<img src="https://img.shields.io/badge/-docs-6F42C1?style=flat-square&logoColor=white" alt="" /> **Documentation**
 
 | | |
 |---|---|
-| <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/workflow-16.svg" width="14" align="absmiddle" /> [Architecture](docs/ARCHITECTURE.md) | Layers, modules, and how they fit together |
-| <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/terminal-16.svg" width="14" align="absmiddle" /> [Supported commands](docs/COMMANDS.md) | Full `docker` and `docker compose` reference |
-| <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/package-16.svg" width="14" align="absmiddle" /> [Compose engine &amp; hot reload](docs/COMPOSE-ENGINE.md) | How `docker compose up` works and the virtiofs inotify bridge |
-| <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/device-desktop-16.svg" width="14" align="absmiddle" /> [GUI features](docs/GUI.md) | Menu bar and storage &amp; cleanup |
-| <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/shield-lock-16.svg" width="14" align="absmiddle" /> [Security](docs/SECURITY.md) | Security policy and notes |
-| <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/heart-16.svg" width="14" align="absmiddle" /> [Contributing](docs/CONTRIBUTING.md) | Development setup, code style, testing, releasing |
-| <img src="https://raw.githubusercontent.com/primer/octicons/main/icons/rocket-16.svg" width="14" align="absmiddle" /> [Roadmap &amp; limitations](docs/ROADMAP.md) | Known limitations and planned improvements |
+| <img src="https://img.shields.io/badge/-arch-6F42C1?style=flat-square&logoColor=white" alt="" /> [Architecture](docs/ARCHITECTURE.md) | Layers, modules, and how they fit together |
+| <img src="https://img.shields.io/badge/-terminal-000000?style=flat-square&logo=gnubash&logoColor=white" alt="" /> [Supported commands](docs/COMMANDS.md) | Full `docker` and `docker compose` reference |
+| <img src="https://img.shields.io/badge/-package-FF6B35?style=flat-square&logoColor=white" alt="" /> [Compose engine &amp; hot reload](docs/COMPOSE-ENGINE.md) | How `docker compose up` works and the virtiofs inotify bridge |
+| <img src="https://img.shields.io/badge/-desktop-1E90FF?style=flat-square&logoColor=white" alt="" /> [GUI features](docs/GUI.md) | Menu bar and storage &amp; cleanup |
+| <img src="https://img.shields.io/badge/-shield-DC3545?style=flat-square&logoColor=white" alt="" /> [Security](docs/SECURITY.md) | Security policy and notes |
+| <img src="https://img.shields.io/badge/-heart-E91E63?style=flat-square&logoColor=white" alt="" /> [Contributing](docs/CONTRIBUTING.md) | Development setup, code style, testing, releasing |
+| <img src="https://img.shields.io/badge/-rocket-FF6B35?style=flat-square&logoColor=white" alt="" /> [Roadmap &amp; limitations](docs/ROADMAP.md) | Known limitations and planned improvements |
 
 ---
 
 <!-- Octicon "shield-lock" — Security -->
-<img src="https://raw.githubusercontent.com/primer/octicons/main/icons/shield-lock-16.svg" width="22" align="absmiddle" /> **Security**
+<img src="https://img.shields.io/badge/-security-DC3545?style=flat-square&logoColor=white" alt="" /> **Security**
 
 - **Privilege escalation**: the Settings "Install CLI" and "Install app in
   /Applications" actions run `osascript` with administrator privileges. These
@@ -383,7 +370,7 @@ macker ps
 ---
 
 <!-- Octicon "heart" — Contributing -->
-<img src="https://raw.githubusercontent.com/primer/octicons/main/icons/heart-16.svg" width="22" align="absmiddle" /> **Contributing**
+<img src="https://img.shields.io/badge/-heart-E91E63?style=flat-square&logoColor=white" alt="" /> **Contributing**
 
 Contributions are welcome — bug reports, feature requests, docs, and pull
 requests.
@@ -402,12 +389,12 @@ CommandLineTools). The XPC protocol is not a stable public API — client and
 `container-apiserver` ship in lockstep; bump `containerVersion` in
 `Package.swift` when updating the runtime.
 
-<img src="https://raw.githubusercontent.com/primer/octicons/main/icons/book-16.svg" width="14" align="absmiddle" /> Full guide — see [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
+<img src="https://img.shields.io/badge/-book-6F42C1?style=flat-square&logoColor=white" alt="" /> Full guide — see [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
 
 ---
 
 <!-- Octicon "law" — License -->
-<img src="https://raw.githubusercontent.com/primer/octicons/main/icons/law-16.svg" width="22" align="absmiddle" /> **License**
+<img src="https://img.shields.io/badge/-law-6C757D?style=flat-square&logoColor=white" alt="" /> **License**
 
 <div align="center">
 
