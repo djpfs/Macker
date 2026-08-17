@@ -199,6 +199,11 @@ public enum DockerCommandParser {
                 positionals.append(contentsOf: tokens)
                 break
             }
+            if token == "-" {
+                // A bare `-` means stdin; treat it as a positional argument.
+                positionals.append(token)
+                continue
+            }
             if token.hasPrefix("-") {
                 let (name, inlineValue) = splitFlag(token)
                 if let inlineValue {

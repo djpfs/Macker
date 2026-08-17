@@ -796,7 +796,7 @@ public struct ComposeOrchestrator: Sendable {
         let configuredNetworks = service.networks.isEmpty ? ["default"] : service.networks
         let networks = configuredNetworks.enumerated().map { index, network in
             let attachmentHostname = index == 0 ? hostname : "\(hostname)-\(Self.sanitize(network))"
-            AttachmentConfiguration(
+            return AttachmentConfiguration(
                 network: Self.runtimeNetworkName(project: project, network: network),
                 options: AttachmentOptions(hostname: attachmentHostname, mtu: 1280)
             )
@@ -819,10 +819,10 @@ public struct ComposeOrchestrator: Sendable {
                   ),
             resources: resources,
             readOnly: service.readOnly,
-            privileged: service.privileged,
             useInit: service.initEnabled,
             capAdd: service.capAdd,
             capDrop: service.capDrop,
+            privileged: service.privileged,
             securityOptions: service.securityOpt,
             shmSize: service.shmSize.flatMap(Self.parseMemory),
             stopSignal: service.stopSignal
