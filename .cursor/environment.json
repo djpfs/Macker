@@ -1,0 +1,8 @@
+{
+  "name": "Macker (Swift on Linux)",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "user": "ubuntu",
+  "install": "./.cursor/install.sh"
+}
