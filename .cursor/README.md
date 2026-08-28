@@ -16,20 +16,28 @@ does (`runs-on: macos-15`).
 
 ## What this environment provides
 
-The image ([`.cursor/Dockerfile`](Dockerfile)) installs the pinned Swift 6
-toolchain (matching `swift-tools-version: 6.0`) so agents can:
+This is a repo-managed environment ([`environment.json`](environment.json)) that
+runs on Cursor's default Linux image. [`install.sh`](install.sh) provisions the
+pinned **Swift 6** toolchain (via [swiftly], matching `swift-tools-version: 6.0`)
+and resolves dependencies, so agents can:
 
 | Capability | Command | Works on Linux |
 | --- | --- | --- |
-| Resolve dependencies | `swift package resolve` | ✅ |
-| Format / lint | `swift format lint -r Sources Tests` | ✅ |
-| Edit with SourceKit-LSP | (editor) | ✅ |
-| Build the app | `swift build` / `make build` | ❌ macOS-only |
-| Run tests | `swift test` / `make test` | ❌ macOS + Xcode |
-| Run the app/CLI | `macker` | ❌ macOS + apple/container |
+| Resolve dependencies | `swift package resolve` | yes |
+| Format / lint | `swift format lint -r Sources Tests` | yes |
+| Edit with SourceKit-LSP | (editor) | yes |
+| Build the app | `swift build` / `make build` | no — macOS-only |
+| Run tests | `swift test` / `make test` | no — macOS + Xcode |
+| Run the app/CLI | `macker` | no — macOS + apple/container |
 
-`install` ([`.cursor/install.sh`](install.sh)) resolves the SwiftPM
+`install.sh` is idempotent: the toolchain install runs only on the first boot
+(and is baked into environment builds), while later boots only re-resolve
 dependencies. It deliberately does **not** run `swift build`, which cannot
 succeed on Linux.
 
+> To make cold boots faster, maintainers can later enable environment builds so
+> the toolchain is prebuilt into the base snapshot instead of installed on first
+> boot.
+
 [apple/container]: https://github.com/apple/container
+[swiftly]: https://www.swift.org/install/linux/swiftly/
