@@ -81,10 +81,10 @@ public struct ServiceConfig: Sendable, Codable, Equatable {
     public var expose: [String]
     /// Volume mounts, e.g. `"./html:/usr/share/nginx/html:ro"`.
     public var volumes: [String]
-    /// Named secrets referenced by this service.
-    public var secrets: [String]
-    /// Named configs referenced by this service.
-    public var configs: [String]
+    /// Secrets this service uses (short form is a name, long form adds target and mode).
+    public var secrets: [ServiceFileRef]
+    /// Configs this service uses (short form is a name, long form adds target and mode).
+    public var configs: [ServiceFileRef]
     /// Networks this service joins.
     public var networks: [String]
     /// Services this service depends on, with their conditions.
@@ -152,8 +152,8 @@ public struct ServiceConfig: Sendable, Codable, Equatable {
         ports: [String] = [],
         expose: [String] = [],
         volumes: [String] = [],
-        secrets: [String] = [],
-        configs: [String] = [],
+        secrets: [ServiceFileRef] = [],
+        configs: [ServiceFileRef] = [],
         networks: [String] = [],
         dependsOn: [String: DependsOnCondition] = [:],
         healthcheck: HealthCheckConfig? = nil,
@@ -277,8 +277,8 @@ public struct ServiceConfig: Sendable, Codable, Equatable {
         ports = try c.decodeIfPresent(PortList.self, forKey: .ports)?.values ?? []
         expose = try c.decodeIfPresent([String].self, forKey: .expose) ?? []
         volumes = try c.decodeIfPresent([String].self, forKey: .volumes) ?? []
-        secrets = try c.decodeIfPresent(StringOrList.self, forKey: .secrets)?.values ?? []
-        configs = try c.decodeIfPresent(StringOrList.self, forKey: .configs)?.values ?? []
+        secrets = try c.decodeIfPresent([ServiceFileRef].self, forKey: .secrets) ?? []
+        configs = try c.decodeIfPresent([ServiceFileRef].self, forKey: .configs) ?? []
         networks = try c.decodeIfPresent(NetworkList.self, forKey: .networks)?.names ?? []
         dependsOn = try c.decodeIfPresent(DependsOnMap.self, forKey: .dependsOn)?.conditions ?? [:]
         healthcheck = try c.decodeIfPresent(HealthCheckConfig.self, forKey: .healthcheck)
@@ -848,5 +848,43 @@ public struct ResourceLimits: Sendable, Codable, Equatable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         cpus = try c.decodeIfPresent(String.self, forKey: .cpus)
         memory = try c.decodeIfPresent(String.self, forKey: .memory)
+    }
+}
+
+/// A config or secret used by a service. Short form is just the name; the long
+/// form also sets where it appears in the container and its file mode.
+public struct ServiceFileRef: Sendable, Codable, Equatable {
+    public var source: String
+    public var target: String?
+    public var mode: String?
+
+    public init(source: String, target: String? = nil, mode: String? = nil) {
+        self.source = source
+        self.target = target
+        self.mode = mode
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case source, target, mode
+    }
+
+    public init(from decoder: Decoder) throws {
+        if let name = try? decoder.singleValueContainer().decode(String.self) {
+            source = name
+            target = nil
+            mode = nil
+            return
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        source = try c.decode(String.self, forKey: .source)
+        target = try c.decodeIfPresent(String.self, forKey: .target)
+        // YAML reads an unquoted 0440 as an octal number, so convert it back.
+        if let text = try? c.decodeIfPresent(String.self, forKey: .mode) {
+            mode = text
+        } else if let octal = try? c.decodeIfPresent(Int.self, forKey: .mode) {
+            mode = "0" + String(octal, radix: 8)
+        } else {
+            mode = nil
+        }
     }
 }
