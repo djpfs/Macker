@@ -341,12 +341,14 @@ public struct ComposeOrchestrator: Sendable {
         }
         let logService = LogService()
         for name in names {
-            let containerName = Self.containerName(project: project.name, service: name, config: project.services[name])
-            for try await line in logService.logs(for: containerName, follow: follow, tail: tail) {
-                if names.count > 1 {
-                    print("\(name) | \(line.text)")
-                } else {
-                    print(line.text)
+            for containerName in try await replicaIDs(project: project, service: name) {
+                let prefixed = names.count > 1 || containerName != Self.containerName(project: project.name, service: name, config: project.services[name])
+                for try await line in logService.logs(for: containerName, follow: follow, tail: tail) {
+                    if prefixed {
+                        print("\(containerName) | \(line.text)")
+                    } else {
+                        print(line.text)
+                    }
                 }
             }
         }
@@ -362,9 +364,10 @@ public struct ComposeOrchestrator: Sendable {
     ) async throws {
         defer { progress?.finish() }
         for name in resolveTargets(project, services) {
-            let containerName = Self.containerName(project: project.name, service: name, config: project.services[name])
             progress?.yield("Stopping \(name)...")
-            try await service.stopContainer(id: containerName)
+            for containerName in try await replicaIDs(project: project, service: name) {
+                try await service.stopContainer(id: containerName)
+            }
         }
     }
 
@@ -376,10 +379,11 @@ public struct ComposeOrchestrator: Sendable {
     ) async throws {
         defer { progress?.finish() }
         for name in resolveTargets(project, services) {
-            let containerName = Self.containerName(project: project.name, service: name, config: project.services[name])
             progress?.yield("Starting \(name)...")
-            try await service.bootstrapContainer(id: containerName)
-            try await service.startProcess(containerId: containerName, processId: containerName)
+            for containerName in try await replicaIDs(project: project, service: name) {
+                try await service.bootstrapContainer(id: containerName)
+                try await service.startProcess(containerId: containerName, processId: containerName)
+            }
         }
     }
 
@@ -391,11 +395,12 @@ public struct ComposeOrchestrator: Sendable {
     ) async throws {
         defer { progress?.finish() }
         for name in resolveTargets(project, services) {
-            let containerName = Self.containerName(project: project.name, service: name, config: project.services[name])
             progress?.yield("Restarting \(name)...")
-            try await service.stopContainer(id: containerName)
-            try await service.bootstrapContainer(id: containerName)
-            try await service.startProcess(containerId: containerName, processId: containerName)
+            for containerName in try await replicaIDs(project: project, service: name) {
+                try await service.stopContainer(id: containerName)
+                try await service.bootstrapContainer(id: containerName)
+                try await service.startProcess(containerId: containerName, processId: containerName)
+            }
         }
     }
 
@@ -548,9 +553,10 @@ public struct ComposeOrchestrator: Sendable {
     ) async throws {
         defer { progress?.finish() }
         for name in resolveTargets(project, services) {
-            let containerName = Self.containerName(project: project.name, service: name, config: project.services[name])
             progress?.yield("Killing \(name)...")
-            try await service.killContainer(id: containerName, signal: signal)
+            for containerName in try await replicaIDs(project: project, service: name) {
+                try await service.killContainer(id: containerName, signal: signal)
+            }
         }
     }
 
@@ -1047,6 +1053,17 @@ public struct ComposeOrchestrator: Sendable {
             }
         }
         return resolved
+    }
+
+    /// Container IDs for every replica of a service that exists for this project.
+    /// Falls back to the replica-1 name when none exist, so errors name the right container.
+    private func replicaIDs(project: ComposeProject, service name: String) async throws -> [String] {
+        let existing = try await projectContainers(project: project)
+            .filter { $0.configuration.labels[ComposeLabel.service] == name }
+            .map(\.id)
+            .sorted()
+        if !existing.isEmpty { return existing }
+        return [Self.containerName(project: project.name, service: name, config: project.services[name])]
     }
 
     /// The project's containers, found by the project label.
