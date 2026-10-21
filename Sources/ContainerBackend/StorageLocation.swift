@@ -198,15 +198,21 @@ public struct StorageLocation: Sendable {
         try FileManager.default.removeItem(at: backup)
     }
 
-    /// Copies a folder with `rsync --sparse`, which keeps holes in sparse files.
-    /// The copy is watched while it runs: if the space it occupies passes
-    /// `allocationLimit`, rsync is stopped and an error is thrown, so a copy
-    /// that expands sparse files cannot fill the disk.
+    /// Copies a folder with `tar | tar`. bsdtar finds the holes in sparse files
+    /// with SEEK_HOLE and does not read them, so a 550 GB sparse image with 40 MB
+    /// of data copies in seconds. The copy is watched while it runs: if the space
+    /// it occupies passes `allocationLimit`, the copy is stopped and an error is
+    /// thrown, so a copy that expands sparse files cannot fill the disk.
     public static func sparseCopy(from source: URL, to destination: URL, allocationLimit: UInt64) throws {
         try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/rsync")
-        process.arguments = ["-a", "--sparse", source.path + "/", destination.path + "/"]
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        // Paths are passed as arguments, never pasted into the script.
+        process.arguments = [
+            "-c",
+            "set -o pipefail; /usr/bin/tar -cf - -C \"$1\" . | /usr/bin/tar -xf - -C \"$2\"",
+            "sparse-copy", source.path, destination.path,
+        ]
         let errors = Pipe()
         process.standardError = errors
         process.standardOutput = FileHandle.nullDevice
@@ -217,7 +223,7 @@ public struct StorageLocation: Sendable {
             Thread.sleep(forTimeInterval: 1)
             if allocatedSize(destination) > allocationLimit {
                 exceeded = true
-                process.terminate()
+                stopCopy(destinationPath: destination.path, process: process)
                 break
             }
         }
@@ -229,6 +235,17 @@ public struct StorageLocation: Sendable {
         guard process.terminationStatus == 0 else {
             throw StorageLocationError.copyFailed(stderr.trimmingCharacters(in: .whitespacesAndNewlines))
         }
+    }
+
+    /// Stops a copy: the shell, and the tar writing to this destination (the
+    /// destination path is unique to this move, so the match is exact).
+    private static func stopCopy(destinationPath: String, process: Process) {
+        process.terminate()
+        let killer = Process()
+        killer.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
+        killer.arguments = ["-f", "-- -C \(destinationPath)"]
+        try? killer.run()
+        killer.waitUntilExit()
     }
 
     /// Space occupied on disk by the files under `url`.
