@@ -467,6 +467,38 @@ public struct DockerTranslator: Sendable {
         try await runCLI(args)
     }
 
+    /// Compose files, in order: every `-f`, else `COMPOSE_FILE` (colon-separated),
+    /// else the standard file names in the current directory, plus its override.
+    static func composeFiles(_ command: DockerCommand) -> [String] {
+        let explicit = command.values("f") + command.values("file")
+        if !explicit.isEmpty { return explicit }
+        if let fromEnv = ProcessInfo.processInfo.environment["COMPOSE_FILE"], !fromEnv.isEmpty {
+            return fromEnv.split(separator: ":").map(String.init)
+        }
+        let fm = FileManager.default
+        let base = ["compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"]
+            .first { fm.fileExists(atPath: $0) } ?? "docker-compose.yml"
+        var files = [base]
+        let overrides = ["compose.override.yaml", "compose.override.yml",
+                         "docker-compose.override.yaml", "docker-compose.override.yml"]
+        if let override = overrides.first(where: { fm.fileExists(atPath: $0) }) {
+            files.append(override)
+        }
+        return files
+    }
+
+    /// Active profiles: every `--profile`, plus `COMPOSE_PROFILES` (comma-separated).
+    static func composeProfiles(_ command: DockerCommand) -> Set<String> {
+        func names(_ value: String) -> [String] {
+            value.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        }
+        var active = Set(command.values("profile").flatMap(names))
+        if let fromEnv = ProcessInfo.processInfo.environment["COMPOSE_PROFILES"] {
+            active.formUnion(names(fromEnv))
+        }
+        return active
+    }
+
     /// `docker prune` — remove all stopped containers.
     private func prune(_ command: DockerCommand) async throws {
         let containers = try await service.listContainers(filters: .all)
@@ -1126,15 +1158,15 @@ public struct DockerTranslator: Sendable {
 
         // `docker compose -f file.yml up -d` — the file may come from `-f`
         // (or `--file`) or default to `./docker-compose.yml`.
-        let file = command.value("f") ?? command.value("file") ?? "docker-compose.yml"
+        let files = Self.composeFiles(command)
         let parser = ComposeParser()
-        let project = try parser.parse(fileAt: file)
+        let project = try parser.parse(files: files, profiles: Self.composeProfiles(command))
         let orchestrator = ComposeOrchestrator(service: service)
 
         switch command.subSubcommand {
         case "up":
             let detached = command.has("d") || command.has("detach")
-            try await orchestrator.up(project: project, filePath: file, detached: detached)
+            try await orchestrator.up(project: project, filePath: files[0], detached: detached)
             if detached {
                 for name in try ServiceResolver.resolve(project) {
                     let containerName = ComposeOrchestrator.containerName(
@@ -1174,9 +1206,9 @@ public struct DockerTranslator: Sendable {
             let data = try encoder.encode(project)
             print(String(decoding: data, as: UTF8.self))
         case "build":
-            try await orchestrator.build(project: project, filePath: file)
+            try await orchestrator.build(project: project, filePath: files[0])
         case "create":
-            try await orchestrator.create(project: project, filePath: file)
+            try await orchestrator.create(project: project, filePath: files[0])
         case "exec":
             guard let serviceName = command.arguments.first else {
                 throw DockerShimError.missingArgument("SERVICE COMMAND")
@@ -1226,7 +1258,7 @@ public struct DockerTranslator: Sendable {
                 project: project,
                 serviceName: serviceName,
                 command: runArgs,
-                filePath: file
+                filePath: files[0]
             )
             if exitCode != 0 {
                 throw ExitCode(exitCode)
