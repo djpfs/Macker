@@ -139,3 +139,32 @@ final class DockerShimTests: XCTestCase {
         }
     }
 }
+
+final class RegistryAndBuildParsingTests: XCTestCase {
+    func testBuildTagAndTargetAreValues() throws {
+        let cmd = try DockerCommandParser.parse(["build", "-t", "app:1", "--target", "prod", "."])
+        XCTAssertEqual(cmd.value(short: "t", long: "tag"), "app:1")
+        XCTAssertEqual(cmd.value("target"), "prod")
+        XCTAssertEqual(cmd.arguments, ["."])
+    }
+
+    func testBuildSecretKeepsCommas() throws {
+        let cmd = try DockerCommandParser.parse(["build", "--secret", "id=token,src=/tmp/t", "."])
+        XCTAssertEqual(cmd.value("secret"), "id=token,src=/tmp/t")
+        XCTAssertEqual(cmd.arguments, ["."])
+    }
+
+    func testBuildNoCacheIsBoolean() throws {
+        let cmd = try DockerCommandParser.parse(["build", "--no-cache", "-f", "Dockerfile.dev", "ctx"])
+        XCTAssertTrue(cmd.has("no-cache"))
+        XCTAssertEqual(cmd.value(short: "f", long: "file"), "Dockerfile.dev")
+        XCTAssertEqual(cmd.arguments, ["ctx"])
+    }
+
+    func testLoginUsernameAndPasswordStdin() throws {
+        let cmd = try DockerCommandParser.parse(["login", "-u", "ana", "--password-stdin", "ghcr.io"])
+        XCTAssertEqual(cmd.value(short: "u", long: "username"), "ana")
+        XCTAssertTrue(cmd.has("password-stdin"))
+        XCTAssertEqual(cmd.arguments, ["ghcr.io"])
+    }
+}
