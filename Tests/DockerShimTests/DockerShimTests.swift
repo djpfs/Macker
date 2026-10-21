@@ -140,6 +140,26 @@ final class DockerShimTests: XCTestCase {
     }
 }
 
+final class CommitAndAliasParsingTests: XCTestCase {
+    func testCommitTakesContainerAndReference() throws {
+        let cmd = try DockerCommandParser.parse(["commit", "web", "myimage:1"])
+        XCTAssertEqual(cmd.arguments, ["web", "myimage:1"])
+    }
+
+    func testCommitMessageFlagIsParsedAsValue() throws {
+        // The value must not leak into the positional arguments.
+        let cmd = try DockerCommandParser.parse(["commit", "-m", "note", "web", "myimage:1"])
+        XCTAssertEqual(cmd.arguments, ["web", "myimage:1"])
+        XCTAssertEqual(cmd.value("m"), "note")
+    }
+
+    func testRunNetworkAliasIsParsedAsValue() throws {
+        let cmd = try DockerCommandParser.parse(["run", "--network-alias", "api,web-api", "-d", "nginx"])
+        XCTAssertEqual(cmd.value("network-alias"), "api,web-api")
+        XCTAssertEqual(cmd.arguments, ["nginx"])
+    }
+}
+
 final class ComposeScaleFlagTests: XCTestCase {
     func testScaleFlagsParseIntoCounts() throws {
         let cmd = try DockerCommandParser.parse(["compose", "up", "-d", "--scale", "web=3", "--scale", "worker=0"])
