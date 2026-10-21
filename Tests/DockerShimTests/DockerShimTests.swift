@@ -166,6 +166,9 @@ final class RegistryAndBuildParsingTests: XCTestCase {
         XCTAssertEqual(cmd.value(short: "u", long: "username"), "ana")
         XCTAssertTrue(cmd.has("password-stdin"))
         XCTAssertEqual(cmd.arguments, ["ghcr.io"])
+    }
+}
+
 final class ComposeScaleFlagTests: XCTestCase {
     func testScaleFlagsParseIntoCounts() throws {
         let cmd = try DockerCommandParser.parse(["compose", "up", "-d", "--scale", "web=3", "--scale", "worker=0"])
