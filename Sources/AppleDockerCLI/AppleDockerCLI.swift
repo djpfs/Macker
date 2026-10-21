@@ -28,6 +28,7 @@ public struct AppleDockerCLICommand: AsyncParsableCommand {
             SelftestCommand.self,
             SystemCommand.self,
             DockerShimCommand.self,
+            MigrateCommand.self,
         ]
     )
 

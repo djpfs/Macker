@@ -241,6 +241,22 @@ public enum DockerForwarder {
         throw DockerContextError.dockerCLINotFound
     }
 
+    /// Runs the docker CLI and collects its output (used by `macker migrate`).
+    public static func capture(_ args: [String]) throws -> (status: Int32, stdout: String, stderr: String) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: try locateDockerCLI())
+        process.arguments = args
+        let out = Pipe()
+        let err = Pipe()
+        process.standardOutput = out
+        process.standardError = err
+        try process.run()
+        let stdout = String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        let stderr = String(decoding: err.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        process.waitUntilExit()
+        return (process.terminationStatus, stdout, stderr)
+    }
+
     /// Runs `docker -H endpoint args…` with the terminal attached, and returns its exit code.
     public static func run(endpoint: String, args: [String]) throws -> Int32 {
         let process = Process()

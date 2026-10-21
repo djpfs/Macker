@@ -23,7 +23,7 @@ import AppleDockerCLI
 enum Main {
     /// Top-level subcommands that are NOT routed to the docker shim.
     private static let knownSubcommands: Set<String> = [
-        "version", "selftest", "system", "docker",
+        "version", "selftest", "system", "docker", "migrate",
         "help", "--help", "-h", "--version",
     ]
 
