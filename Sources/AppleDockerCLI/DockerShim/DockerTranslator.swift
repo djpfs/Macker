@@ -510,6 +510,19 @@ public struct DockerTranslator: Sendable {
         return files
     }
 
+    /// `--scale SERVICE=N` (repeatable) for `compose up`.
+    static func composeScales(_ command: DockerCommand) throws -> [String: Int] {
+        var scales: [String: Int] = [:]
+        for value in command.values("scale") {
+            let parts = value.split(separator: "=", maxSplits: 1).map(String.init)
+            guard parts.count == 2, let count = Int(parts[1]), count >= 0 else {
+                throw DockerShimError.missingArgument("--scale SERVICE=NUM (got \(value))")
+            }
+            scales[parts[0]] = count
+        }
+        return scales
+    }
+
     /// Active profiles: every `--profile`, plus `COMPOSE_PROFILES` (comma-separated).
     static func composeProfiles(_ command: DockerCommand) -> Set<String> {
         func names(_ value: String) -> [String] {
@@ -1235,7 +1248,12 @@ public struct DockerTranslator: Sendable {
         switch command.subSubcommand {
         case "up":
             let detached = command.has("d") || command.has("detach")
-            try await orchestrator.up(project: project, filePath: files[0], detached: detached)
+            try await orchestrator.up(
+                project: project,
+                filePath: files[0],
+                detached: detached,
+                scales: try Self.composeScales(command)
+            )
             if detached {
                 for name in try ServiceResolver.resolve(project) {
                     let containerName = ComposeOrchestrator.containerName(

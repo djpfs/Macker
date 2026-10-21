@@ -75,10 +75,21 @@ public struct ComposeOrchestrator: Sendable {
     /// `<project>-<service>-1` convention, or the service's `container_name:`
     /// when set.
     public static func containerName(project: String, service: String, config: ServiceConfig? = nil) -> String {
-        if let config, let custom = config.containerName {
+        replicaName(project: project, service: service, config: config, replica: 1)
+    }
+
+    /// The container name for one replica of a service. Replica 1 keeps the
+    /// `container_name:` override when set; further replicas are `<project>-<service>-<n>`.
+    public static func replicaName(project: String, service: String, config: ServiceConfig? = nil, replica: Int) -> String {
+        if replica == 1, let config, let custom = config.containerName {
             return custom
         }
-        return "\(sanitize(project))-\(sanitize(service))-1"
+        return "\(sanitize(project))-\(sanitize(service))-\(replica)"
+    }
+
+    /// How many replicas a service runs: the `--scale` value when given, else `scale:`, else 1.
+    public static func replicaCount(for serviceName: String, in project: ComposeProject, scales: [String: Int]) -> Int {
+        max(1, scales[serviceName] ?? project.services[serviceName]?.scale ?? 1)
     }
 
     /// The image reference for a service: its `image:` when present, otherwise
@@ -151,7 +162,8 @@ public struct ComposeOrchestrator: Sendable {
         project: ComposeProject,
         filePath: String,
         detached: Bool = true,
-        progress: AsyncStream<String>.Continuation? = nil
+        progress: AsyncStream<String>.Continuation? = nil,
+        scales: [String: Int] = [:]
     ) async throws {
         defer { progress?.finish() }
         let order = try ServiceResolver.resolve(project)
@@ -182,24 +194,45 @@ public struct ComposeOrchestrator: Sendable {
         progress?.yield("Creating networks...")
         try await ensureNetworks(project)
 
-        // 3. Create containers in dependency order, recreating any whose
-        //    config hash changed since the last `up`.
+        // 3. Create one container per replica, in dependency order, recreating
+        //    any whose config hash changed since the last `up`.
         for name in order {
             let serviceConfig = project.services[name]!
-            let containerName = Self.containerName(project: project.name, service: name, config: serviceConfig)
             let hash = Self.configHash(for: serviceConfig)
-            if let existing = try? await service.getContainer(id: containerName) {
-                let storedHash = existing.configuration.labels[ComposeLabel.configHash]
-                if storedHash != hash {
-                    progress?.yield("Recreating \(name)...")
-                    try? await service.stopContainer(id: containerName)
-                    try? await service.deleteContainer(id: containerName, force: true)
+            let count = Self.replicaCount(for: name, in: project, scales: scales)
+            for replica in 1...count {
+                let containerName = Self.replicaName(project: project.name, service: name, config: serviceConfig, replica: replica)
+                if let existing = try? await service.getContainer(id: containerName) {
+                    let storedHash = existing.configuration.labels[ComposeLabel.configHash]
+                    if storedHash != hash {
+                        progress?.yield("Recreating \(containerName)...")
+                        try? await service.stopContainer(id: containerName)
+                        try? await service.deleteContainer(id: containerName, force: true)
+                        let config = try await buildConfiguration(
+                            project: project,
+                            serviceName: name,
+                            service: serviceConfig,
+                            filePath: filePath,
+                            configHash: hash,
+                            replica: replica
+                        )
+                        try await service.createContainer(
+                            configuration: config,
+                            options: .default,
+                            kernel: nil,
+                            initImage: nil,
+                            runtimeData: nil
+                        )
+                    }
+                } else {
+                    progress?.yield("Creating \(containerName)...")
                     let config = try await buildConfiguration(
                         project: project,
                         serviceName: name,
                         service: serviceConfig,
                         filePath: filePath,
-                        configHash: hash
+                        configHash: hash,
+                        replica: replica
                     )
                     try await service.createContainer(
                         configuration: config,
@@ -209,29 +242,25 @@ public struct ComposeOrchestrator: Sendable {
                         runtimeData: nil
                     )
                 }
-            } else {
-                progress?.yield("Creating \(name)...")
-                let config = try await buildConfiguration(
-                    project: project,
-                    serviceName: name,
-                    service: serviceConfig,
-                    filePath: filePath,
-                    configHash: hash
-                )
-                try await service.createContainer(
-                    configuration: config,
-                    options: .default,
-                    kernel: nil,
-                    initImage: nil,
-                    runtimeData: nil
-                )
             }
+        }
+
+        // Replicas above the requested count (after a scale-down) are removed.
+        for container in try await projectContainers(project: project) {
+            let labels = container.configuration.labels
+            guard let serviceName = labels[ComposeLabel.service],
+                  let number = Int(labels[ComposeLabel.containerNumber] ?? "1"),
+                  number > Self.replicaCount(for: serviceName, in: project, scales: scales) else { continue }
+            progress?.yield("Removing \(container.id)...")
+            if container.status == .running {
+                try? await service.stopContainer(id: container.id)
+            }
+            try? await service.deleteContainer(id: container.id, force: true)
         }
 
         // 4. Start containers in dependency order, honoring `service_healthy`.
         for name in order {
             let serviceConfig = project.services[name]!
-            let containerName = Self.containerName(project: project.name, service: name, config: serviceConfig)
 
             // Wait for dependencies that must be healthy first.
             for (dep, condition) in serviceConfig.dependsOn where condition == .serviceHealthy {
@@ -243,18 +272,21 @@ public struct ComposeOrchestrator: Sendable {
                 }
             }
 
-            let snapshot = try await service.getContainer(id: containerName)
-            if snapshot.status == .running {
-                continue
+            for replica in 1...Self.replicaCount(for: name, in: project, scales: scales) {
+                let containerName = Self.replicaName(project: project.name, service: name, config: serviceConfig, replica: replica)
+                let snapshot = try await service.getContainer(id: containerName)
+                if snapshot.status == .running {
+                    continue
+                }
+                progress?.yield("Starting \(containerName)...")
+                try await service.bootstrapContainer(id: containerName)
+                try await service.startProcess(containerId: containerName, processId: containerName)
             }
-            progress?.yield("Starting \(name)...")
-            try await service.bootstrapContainer(id: containerName)
-            try await service.startProcess(containerId: containerName, processId: containerName)
         }
 
         // 5. Sync /etc/hosts so services resolve each other by name.
         progress?.yield("Syncing /etc/hosts...")
-        try await syncHosts(project: project)
+        try await syncHosts(project: project, scales: scales)
     }
 
     // MARK: - Down
@@ -290,9 +322,10 @@ public struct ComposeOrchestrator: Sendable {
     public func ps(project: ComposeProject) async throws -> [ContainerSnapshot] {
         let containers = try await projectContainers(project: project)
         let order = try ServiceResolver.resolve(project)
-        return order.compactMap { name in
-            let containerName = Self.containerName(project: project.name, service: name, config: project.services[name])
-            return containers.first { $0.id == containerName }
+        return order.flatMap { name in
+            containers
+                .filter { $0.configuration.labels[ComposeLabel.service] == name }
+                .sorted { $0.id < $1.id }
         }
     }
 
@@ -694,9 +727,10 @@ public struct ComposeOrchestrator: Sendable {
         serviceName: String,
         service: ServiceConfig,
         filePath: String,
-        configHash: String? = nil
+        configHash: String? = nil,
+        replica: Int = 1
     ) async throws -> ContainerConfiguration {
-        let containerName = Self.containerName(project: project.name, service: serviceName, config: service)
+        let containerName = Self.replicaName(project: project.name, service: serviceName, config: service, replica: replica)
 
         // Resolve the image and its default process config.
         let imageRef = service.image ?? Self.imageRef(project: project.name, service: serviceName)
@@ -796,6 +830,7 @@ public struct ComposeOrchestrator: Sendable {
         var labels = service.labels
         labels[ComposeLabel.project] = project.name
         labels[ComposeLabel.service] = serviceName
+        labels[ComposeLabel.containerNumber] = String(replica)
         labels[ComposeLabel.workingDir] = URL(fileURLWithPath: filePath).deletingLastPathComponent().path
         labels[ComposeLabel.configFiles] = filePath
         labels[ComposeLabel.containerNumber] = "1"
@@ -1312,27 +1347,33 @@ public struct ComposeOrchestrator: Sendable {
 
     /// Write `<service-name> <ip>` entries into every container's /etc/hosts so
     /// services resolve each other by name.
-    private func syncHosts(project: ComposeProject) async throws {
-        var ips: [String: String] = [:]
+    private func syncHosts(project: ComposeProject, scales: [String: Int]) async throws {
+        var ips: [String: [String]] = [:]
+        var members: [(service: String, container: String)] = []
         for name in project.services.keys {
-            let containerName = Self.containerName(project: project.name, service: name, config: project.services[name])
-            if let snapshot = try? await service.getContainer(id: containerName),
-               let ip = containerIP(snapshot) {
-                ips[name] = ip
+            let count = Self.replicaCount(for: name, in: project, scales: scales)
+            for replica in 1...count {
+                let containerName = Self.replicaName(project: project.name, service: name, config: project.services[name], replica: replica)
+                members.append((name, containerName))
+                if let snapshot = try? await service.getContainer(id: containerName),
+                   let ip = containerIP(snapshot) {
+                    ips[name, default: []].append(ip)
+                }
             }
         }
         guard !ips.isEmpty else { return }
 
-        for name in project.services.keys {
-            let containerName = Self.containerName(project: project.name, service: name, config: project.services[name])
+        for member in members {
             var entries = ""
-            for (otherName, ip) in ips where otherName != name {
-                entries += "\(ip) \(otherName)\n"
+            for (otherName, addresses) in ips where otherName != member.service {
+                for ip in addresses {
+                    entries += "\(ip) \(otherName)\n"
+                }
             }
             guard !entries.isEmpty else { continue }
             // Append to /etc/hosts via a shell command inside the container.
             let script = "printf '%s' '\(entries)' >> /etc/hosts"
-            _ = try? await runInContainer(containerId: containerName, command: ["sh", "-c", script])
+            _ = try? await runInContainer(containerId: member.container, command: ["sh", "-c", script])
         }
     }
 
