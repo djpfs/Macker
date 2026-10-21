@@ -54,3 +54,24 @@ final class RuntimeVersionTests: XCTestCase {
         }
     }
 }
+
+final class LaunchdStatusParsingTests: XCTestCase {
+    func testRunningPayloadMapsToRunning() {
+        let json = #"{"status":"running","client":{"version":"1.6.0"}}"#
+        XCTAssertEqual(LaunchdManager.parseStatus(json, fallback: ""), .running)
+    }
+
+    func testDownPayloadsMapToStopped() {
+        XCTAssertEqual(LaunchdManager.parseStatus(#"{"status":"not running"}"#, fallback: ""), .stopped)
+        XCTAssertEqual(LaunchdManager.parseStatus(#"{"status":"unregistered"}"#, fallback: ""), .stopped)
+    }
+
+    func testUnknownStatusIsReportedVerbatim() {
+        XCTAssertEqual(LaunchdManager.parseStatus(#"{"status":"starting"}"#, fallback: ""), .unknown("starting"))
+    }
+
+    func testUnreadableOutputUsesStderrAsReason() {
+        XCTAssertEqual(LaunchdManager.parseStatus("not json", fallback: " boom \n"), .unknown("boom"))
+        XCTAssertEqual(LaunchdManager.parseStatus("", fallback: ""), .unknown("unreadable system status output"))
+    }
+}
