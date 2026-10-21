@@ -241,6 +241,24 @@ public enum DockerForwarder {
         throw DockerContextError.dockerCLINotFound
     }
 
+    /// Runs the docker CLI with stdout written straight to `output` (binary-safe),
+    /// and returns the exit status and stderr.
+    public static func capture(_ args: [String], stdoutTo output: URL) throws -> (status: Int32, stderr: String) {
+        FileManager.default.createFileIfNeeded(at: output)
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: try locateDockerCLI())
+        process.arguments = args
+        let handle = try FileHandle(forWritingTo: output)
+        defer { try? handle.close() }
+        let err = Pipe()
+        process.standardOutput = handle
+        process.standardError = err
+        try process.run()
+        let stderr = String(decoding: err.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        process.waitUntilExit()
+        return (process.terminationStatus, stderr)
+    }
+
     /// Runs the docker CLI and collects its output (used by `macker migrate`).
     public static func capture(_ args: [String]) throws -> (status: Int32, stdout: String, stderr: String) {
         let process = Process()
@@ -265,5 +283,14 @@ public enum DockerForwarder {
         try process.run()
         process.waitUntilExit()
         return process.terminationStatus
+    }
+}
+
+extension FileManager {
+    /// Creates an empty file at `url` if none exists.
+    func createFileIfNeeded(at url: URL) {
+        if !fileExists(atPath: url.path) {
+            createFile(atPath: url.path, contents: nil)
+        }
     }
 }
