@@ -348,6 +348,75 @@ docker ps
 macker ps
 ```
 
+### <img src="https://img.shields.io/badge/-registry-2496ED?style=flat-square&logo=docker&logoColor=white" alt="" /> Registries, build and push
+
+```bash
+echo "$TOKEN" | docker login ghcr.io -u myuser --password-stdin   # password never in argv
+docker login registry.local:5000 --scheme http -u ci --password-stdin
+docker logout ghcr.io
+
+docker build -t app:1 --target prod --platform linux/arm64 --label team=web \
+  --secret id=token,src=$HOME/.npmrc --pull -f Dockerfile.dev .
+docker build -t app:1 --no-cache .
+docker tag app:1 registry.example.com/team/app:1
+docker push registry.example.com/team/app:1
+```
+
+`docker login` reads the password from `--password-stdin` or a hidden prompt.
+Build caching is controlled with `--no-cache` and `--pull`. The 1.6.0 CLI has no
+cache-from/cache-to options, so cache import and export are not available yet.
+
+### <img src="https://img.shields.io/badge/-context-6F42C1?style=flat-square&logoColor=white" alt="" /> Contexts and other daemons
+
+```bash
+docker context ls
+docker context create colima --docker host=unix://$HOME/.colima/default/docker.sock
+docker context use colima           # later commands go to Colima through its docker CLI
+docker --context default ps         # one call on the local runtime
+docker context rm colima
+```
+
+The `default` context is Macker's own runtime. Any other context sends the
+command, unchanged, to the docker CLI installed with that runtime (Docker
+Desktop, Colima and OrbStack ship one). Macker never uses itself for that.
+
+### <img src="https://img.shields.io/badge/-migrate-FF6B35?style=flat-square&logoColor=white" alt="" /> Migrating from Docker Desktop, Colima or OrbStack
+
+```bash
+macker migrate --from colima --dry-run       # list images (and volumes with --volumes)
+macker migrate --from colima                 # copy every image
+macker migrate --from orbstack --volumes     # also copy named volumes, with contents
+macker migrate --from docker-desktop --volumes --helper-image alpine:latest
+```
+
+Images are saved with the source's docker CLI and loaded with `container image
+load`. Named volumes are read and written with `tar` in a helper container
+(default `alpine:latest`, which must contain `tar`). Containers, compose
+projects, bind mounts and anonymous volumes are not moved; recreate them with
+`docker compose up` once the images and volumes are in place.
+
+### <img src="https://img.shields.io/badge/-compose-FF6B35?style=flat-square&logoColor=white" alt="" /> Compose extras
+
+```bash
+docker compose -f compose.yaml -f compose.prod.yaml up -d     # files are merged in order
+COMPOSE_FILE=compose.yaml:compose.dev.yaml docker compose up -d
+docker compose --profile debug up -d                            # or COMPOSE_PROFILES=debug
+docker compose up -d --scale web=3                              # replicas: web-1, web-2, web-3
+docker compose stop web                                         # acts on every replica
+```
+
+- Without `-f`, Macker uses `compose.yaml` (or `docker-compose.yml`) and its
+  `.override` file when present.
+- Services with `profiles:` run only when a matching profile is active.
+- `deploy.replicas` sets the replica count when `scale:` and `--scale` are unset.
+- `configs:` and `secrets:` with a `file:` source are mounted read-only at their
+  `target:` (default `/<name>` for configs, `/run/secrets/<name>` for secrets).
+- `healthcheck: { disable: true }` (or `test: [NONE]`) turns a healthcheck off.
+
+Not yet supported in Compose: inline `content:` configs, environment-backed
+secrets, external configs and secrets, healthcheck status in `ps`, and the
+per-check `timeout`.
+
 <img src="https://img.shields.io/badge/-book-6F42C1?style=flat-square&logoColor=white" alt="" /> Full command reference — see [docs/COMMANDS.md](docs/COMMANDS.md).
 
 ---
