@@ -1219,10 +1219,12 @@ public struct DockerTranslator: Sendable {
             try await orchestrator.down(project: project, removeVolumes: removeVolumes)
         case "ps":
             let containers = try await orchestrator.ps(project: project)
+            let health = await orchestrator.healthStatus(project: project)
             print("NAME   SERVICE   STATUS")
             for container in containers {
                 let serviceName = container.configuration.labels[ComposeOrchestrator.ComposeLabel.service] ?? "-"
-                print("\(container.id)   \(serviceName)   \(container.status.rawValue)")
+                let state = health[container.id].map { "\(container.status.rawValue) (\($0))" } ?? container.status.rawValue
+                print("\(container.id)   \(serviceName)   \(state)")
             }
         case "logs":
             let follow = command.has("f") || command.has("follow")

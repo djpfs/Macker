@@ -661,17 +661,21 @@ public struct VolumeConfig: Sendable, Codable, Equatable {
 /// A config definition.
 public struct ConfigConfig: Sendable, Codable, Equatable {
     public var file: String?
+    /// Inline content, written to a file by Macker before it is mounted.
+    public var content: String?
     public var external: Bool
     public var name: String?
 
-    public init(file: String? = nil, external: Bool = false, name: String? = nil) {
+    public init(file: String? = nil, content: String? = nil, external: Bool = false, name: String? = nil) {
         self.file = file
+        self.content = content
         self.external = external
         self.name = name
     }
 
     enum CodingKeys: String, CodingKey {
         case file
+        case content
         case external
         case name
     }
@@ -679,6 +683,7 @@ public struct ConfigConfig: Sendable, Codable, Equatable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         file = try c.decodeIfPresent(String.self, forKey: .file)
+        content = try c.decodeIfPresent(String.self, forKey: .content)
         if let externalBool = try? c.decodeIfPresent(Bool.self, forKey: .external) {
             external = externalBool
         } else {
@@ -691,17 +696,21 @@ public struct ConfigConfig: Sendable, Codable, Equatable {
 /// A secret definition.
 public struct SecretConfig: Sendable, Codable, Equatable {
     public var file: String?
+    /// Inline content, written to a file by Macker before it is mounted.
+    public var content: String?
     public var external: Bool
     public var name: String?
 
-    public init(file: String? = nil, external: Bool = false, name: String? = nil) {
+    public init(file: String? = nil, content: String? = nil, external: Bool = false, name: String? = nil) {
         self.file = file
+        self.content = content
         self.external = external
         self.name = name
     }
 
     enum CodingKeys: String, CodingKey {
         case file
+        case content
         case external
         case name
     }
@@ -709,6 +718,7 @@ public struct SecretConfig: Sendable, Codable, Equatable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         file = try c.decodeIfPresent(String.self, forKey: .file)
+        content = try c.decodeIfPresent(String.self, forKey: .content)
         if let externalBool = try? c.decodeIfPresent(Bool.self, forKey: .external) {
             external = externalBool
         } else {
