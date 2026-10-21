@@ -79,6 +79,16 @@ final class AppState {
     var isInstalling = false
     /// Whether an app install into /Applications is in flight.
     var isInstallingApp = false
+    /// Version of the installed `container` CLI, nil when not found.
+    var runtimeInstalled: String?
+    /// Newest apple/container release on GitHub, nil until checked.
+    var runtimeLatest: String?
+    /// Why the latest release could not be read, if it could not.
+    var runtimeLatestError: String?
+    /// Whether a runtime version check is in flight.
+    var isCheckingRuntime = false
+    /// Whether a runtime upgrade is in flight.
+    var isUpgradingRuntime = false
     /// Rolling history of per-container stats for the dashboard charts.
     var statsHistory: [StatsSample] = []
     /// History of image builds, shown in the Builds tab (most recent first).
@@ -576,6 +586,73 @@ final class AppState {
             try await service.daemon.stop()
             try await service.daemon.start()
             await refresh()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    // MARK: - Runtime version actions
+
+    /// Reads the installed CLI version and the latest GitHub release.
+    func checkRuntimeVersions() async {
+        guard !isCheckingRuntime else { return }
+        isCheckingRuntime = true
+        defer { isCheckingRuntime = false }
+
+        runtimeInstalled = await RuntimeVersion.installedVersion()
+        do {
+            runtimeLatest = try await RuntimeVersion.release().tag
+            runtimeLatestError = nil
+        } catch {
+            runtimeLatestError = error.localizedDescription
+        }
+    }
+
+    /// Installs the recommended apple/container release over the current one.
+    /// Stops the daemon first (the package replaces its binaries) and starts it
+    /// again afterwards, even when the install fails.
+    func upgradeRuntime() async {
+        let opID = beginOperation("upgradeRuntime", section: .settings)
+        defer { endOperation(opID) }
+        guard !isUpgradingRuntime else { return }
+        isUpgradingRuntime = true
+        defer { isUpgradingRuntime = false }
+
+        do {
+            let release = try await RuntimeVersion.release(tag: RuntimeVersion.recommended)
+            let package = try await RuntimeVersion.download(release)
+
+            try await service.daemon.stop()
+            let script = "/usr/sbin/installer -pkg \"\(package.path)\" -target /"
+            let escaped = script.replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "\"", with: "\\\"")
+            let osa = "do shell script \"\(escaped)\" with administrator privileges"
+
+            let result: ProcessResult
+            do {
+                let runner = ProcessRunner(containerPath: "/usr/bin/osascript")
+                result = try await runner.runExecutable(
+                    "/usr/bin/osascript",
+                    args: ["-e", osa],
+                    timeout: .seconds(900)
+                )
+            } catch {
+                try? await service.daemon.start()
+                throw error
+            }
+            try? await service.daemon.start()
+            reconnect()
+
+            guard result.succeeded else {
+                // Exit 1 with "User canceled" when the password prompt is dismissed.
+                errorMessage = result.stderr.isEmpty
+                    ? "Runtime install failed (exit \(result.exitCode))"
+                    : result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+                return
+            }
+            errorMessage = nil
+            await refresh()
+            await checkRuntimeVersions()
         } catch {
             errorMessage = error.localizedDescription
         }

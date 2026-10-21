@@ -10,6 +10,7 @@
 import PackageDescription
 
 /// Version of apple/container this client was built and tested against.
+/// Mirrored in `RuntimeVersion.recommended` (Sources/ContainerBackend/RuntimeVersion.swift).
 let containerVersion = "1.6.0"
 
 let package = Package(
