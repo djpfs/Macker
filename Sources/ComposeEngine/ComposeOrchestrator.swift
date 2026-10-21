@@ -75,10 +75,26 @@ public struct ComposeOrchestrator: Sendable {
     /// `<project>-<service>-1` convention, or the service's `container_name:`
     /// when set.
     public static func containerName(project: String, service: String, config: ServiceConfig? = nil) -> String {
-        if let config, let custom = config.containerName {
+        replicaName(project: project, service: service, config: config, replica: 1)
+    }
+
+    /// The container name for one replica of a service. Replica 1 keeps the
+    /// `container_name:` override when set; further replicas are `<project>-<service>-<n>`.
+    public static func replicaName(project: String, service: String, config: ServiceConfig? = nil, replica: Int) -> String {
+        if replica == 1, let config, let custom = config.containerName {
             return custom
         }
-        return "\(sanitize(project))-\(sanitize(service))-1"
+        return "\(sanitize(project))-\(sanitize(service))-\(replica)"
+    }
+
+    /// How many replicas a service runs. The `--scale` value wins, then a
+    /// non-default `scale:`, then `deploy.replicas`, then 1.
+    public static func replicaCount(for serviceName: String, in project: ComposeProject, scales: [String: Int]) -> Int {
+        let service = project.services[serviceName]
+        if let scaled = scales[serviceName] { return max(1, scaled) }
+        if let scale = service?.scale, scale != 1 { return max(1, scale) }
+        if let replicas = service?.deploy?.replicas { return max(1, replicas) }
+        return 1
     }
 
     /// The image reference for a service: its `image:` when present, otherwise
@@ -151,7 +167,8 @@ public struct ComposeOrchestrator: Sendable {
         project: ComposeProject,
         filePath: String,
         detached: Bool = true,
-        progress: AsyncStream<String>.Continuation? = nil
+        progress: AsyncStream<String>.Continuation? = nil,
+        scales: [String: Int] = [:]
     ) async throws {
         defer { progress?.finish() }
         let order = try ServiceResolver.resolve(project)
@@ -182,24 +199,45 @@ public struct ComposeOrchestrator: Sendable {
         progress?.yield("Creating networks...")
         try await ensureNetworks(project)
 
-        // 3. Create containers in dependency order, recreating any whose
-        //    config hash changed since the last `up`.
+        // 3. Create one container per replica, in dependency order, recreating
+        //    any whose config hash changed since the last `up`.
         for name in order {
             let serviceConfig = project.services[name]!
-            let containerName = Self.containerName(project: project.name, service: name, config: serviceConfig)
             let hash = Self.configHash(for: serviceConfig)
-            if let existing = try? await service.getContainer(id: containerName) {
-                let storedHash = existing.configuration.labels[ComposeLabel.configHash]
-                if storedHash != hash {
-                    progress?.yield("Recreating \(name)...")
-                    try? await service.stopContainer(id: containerName)
-                    try? await service.deleteContainer(id: containerName, force: true)
+            let count = Self.replicaCount(for: name, in: project, scales: scales)
+            for replica in 1...count {
+                let containerName = Self.replicaName(project: project.name, service: name, config: serviceConfig, replica: replica)
+                if let existing = try? await service.getContainer(id: containerName) {
+                    let storedHash = existing.configuration.labels[ComposeLabel.configHash]
+                    if storedHash != hash {
+                        progress?.yield("Recreating \(containerName)...")
+                        try? await service.stopContainer(id: containerName)
+                        try? await service.deleteContainer(id: containerName, force: true)
+                        let config = try await buildConfiguration(
+                            project: project,
+                            serviceName: name,
+                            service: serviceConfig,
+                            filePath: filePath,
+                            configHash: hash,
+                            replica: replica
+                        )
+                        try await service.createContainer(
+                            configuration: config,
+                            options: .default,
+                            kernel: nil,
+                            initImage: nil,
+                            runtimeData: nil
+                        )
+                    }
+                } else {
+                    progress?.yield("Creating \(containerName)...")
                     let config = try await buildConfiguration(
                         project: project,
                         serviceName: name,
                         service: serviceConfig,
                         filePath: filePath,
-                        configHash: hash
+                        configHash: hash,
+                        replica: replica
                     )
                     try await service.createContainer(
                         configuration: config,
@@ -209,29 +247,25 @@ public struct ComposeOrchestrator: Sendable {
                         runtimeData: nil
                     )
                 }
-            } else {
-                progress?.yield("Creating \(name)...")
-                let config = try await buildConfiguration(
-                    project: project,
-                    serviceName: name,
-                    service: serviceConfig,
-                    filePath: filePath,
-                    configHash: hash
-                )
-                try await service.createContainer(
-                    configuration: config,
-                    options: .default,
-                    kernel: nil,
-                    initImage: nil,
-                    runtimeData: nil
-                )
             }
+        }
+
+        // Replicas above the requested count (after a scale-down) are removed.
+        for container in try await projectContainers(project: project) {
+            let labels = container.configuration.labels
+            guard let serviceName = labels[ComposeLabel.service],
+                  let number = Int(labels[ComposeLabel.containerNumber] ?? "1"),
+                  number > Self.replicaCount(for: serviceName, in: project, scales: scales) else { continue }
+            progress?.yield("Removing \(container.id)...")
+            if container.status == .running {
+                try? await service.stopContainer(id: container.id)
+            }
+            try? await service.deleteContainer(id: container.id, force: true)
         }
 
         // 4. Start containers in dependency order, honoring `service_healthy`.
         for name in order {
             let serviceConfig = project.services[name]!
-            let containerName = Self.containerName(project: project.name, service: name, config: serviceConfig)
 
             // Wait for dependencies that must be healthy first.
             for (dep, condition) in serviceConfig.dependsOn where condition == .serviceHealthy {
@@ -243,18 +277,21 @@ public struct ComposeOrchestrator: Sendable {
                 }
             }
 
-            let snapshot = try await service.getContainer(id: containerName)
-            if snapshot.status == .running {
-                continue
+            for replica in 1...Self.replicaCount(for: name, in: project, scales: scales) {
+                let containerName = Self.replicaName(project: project.name, service: name, config: serviceConfig, replica: replica)
+                let snapshot = try await service.getContainer(id: containerName)
+                if snapshot.status == .running {
+                    continue
+                }
+                progress?.yield("Starting \(containerName)...")
+                try await service.bootstrapContainer(id: containerName)
+                try await service.startProcess(containerId: containerName, processId: containerName)
             }
-            progress?.yield("Starting \(name)...")
-            try await service.bootstrapContainer(id: containerName)
-            try await service.startProcess(containerId: containerName, processId: containerName)
         }
 
         // 5. Sync /etc/hosts so services resolve each other by name.
         progress?.yield("Syncing /etc/hosts...")
-        try await syncHosts(project: project)
+        try await syncHosts(project: project, scales: scales)
     }
 
     // MARK: - Down
@@ -290,9 +327,10 @@ public struct ComposeOrchestrator: Sendable {
     public func ps(project: ComposeProject) async throws -> [ContainerSnapshot] {
         let containers = try await projectContainers(project: project)
         let order = try ServiceResolver.resolve(project)
-        return order.compactMap { name in
-            let containerName = Self.containerName(project: project.name, service: name, config: project.services[name])
-            return containers.first { $0.id == containerName }
+        return order.flatMap { name in
+            containers
+                .filter { $0.configuration.labels[ComposeLabel.service] == name }
+                .sorted { $0.id < $1.id }
         }
     }
 
@@ -308,12 +346,14 @@ public struct ComposeOrchestrator: Sendable {
         }
         let logService = LogService()
         for name in names {
-            let containerName = Self.containerName(project: project.name, service: name, config: project.services[name])
-            for try await line in logService.logs(for: containerName, follow: follow, tail: tail) {
-                if names.count > 1 {
-                    print("\(name) | \(line.text)")
-                } else {
-                    print(line.text)
+            for containerName in try await replicaIDs(project: project, service: name) {
+                let prefixed = names.count > 1 || containerName != Self.containerName(project: project.name, service: name, config: project.services[name])
+                for try await line in logService.logs(for: containerName, follow: follow, tail: tail) {
+                    if prefixed {
+                        print("\(containerName) | \(line.text)")
+                    } else {
+                        print(line.text)
+                    }
                 }
             }
         }
@@ -329,9 +369,10 @@ public struct ComposeOrchestrator: Sendable {
     ) async throws {
         defer { progress?.finish() }
         for name in resolveTargets(project, services) {
-            let containerName = Self.containerName(project: project.name, service: name, config: project.services[name])
             progress?.yield("Stopping \(name)...")
-            try await service.stopContainer(id: containerName)
+            for containerName in try await replicaIDs(project: project, service: name) {
+                try await service.stopContainer(id: containerName)
+            }
         }
     }
 
@@ -343,10 +384,11 @@ public struct ComposeOrchestrator: Sendable {
     ) async throws {
         defer { progress?.finish() }
         for name in resolveTargets(project, services) {
-            let containerName = Self.containerName(project: project.name, service: name, config: project.services[name])
             progress?.yield("Starting \(name)...")
-            try await service.bootstrapContainer(id: containerName)
-            try await service.startProcess(containerId: containerName, processId: containerName)
+            for containerName in try await replicaIDs(project: project, service: name) {
+                try await service.bootstrapContainer(id: containerName)
+                try await service.startProcess(containerId: containerName, processId: containerName)
+            }
         }
     }
 
@@ -358,11 +400,12 @@ public struct ComposeOrchestrator: Sendable {
     ) async throws {
         defer { progress?.finish() }
         for name in resolveTargets(project, services) {
-            let containerName = Self.containerName(project: project.name, service: name, config: project.services[name])
             progress?.yield("Restarting \(name)...")
-            try await service.stopContainer(id: containerName)
-            try await service.bootstrapContainer(id: containerName)
-            try await service.startProcess(containerId: containerName, processId: containerName)
+            for containerName in try await replicaIDs(project: project, service: name) {
+                try await service.stopContainer(id: containerName)
+                try await service.bootstrapContainer(id: containerName)
+                try await service.startProcess(containerId: containerName, processId: containerName)
+            }
         }
     }
 
@@ -515,9 +558,10 @@ public struct ComposeOrchestrator: Sendable {
     ) async throws {
         defer { progress?.finish() }
         for name in resolveTargets(project, services) {
-            let containerName = Self.containerName(project: project.name, service: name, config: project.services[name])
             progress?.yield("Killing \(name)...")
-            try await service.killContainer(id: containerName, signal: signal)
+            for containerName in try await replicaIDs(project: project, service: name) {
+                try await service.killContainer(id: containerName, signal: signal)
+            }
         }
     }
 
@@ -694,9 +738,10 @@ public struct ComposeOrchestrator: Sendable {
         serviceName: String,
         service: ServiceConfig,
         filePath: String,
-        configHash: String? = nil
+        configHash: String? = nil,
+        replica: Int = 1
     ) async throws -> ContainerConfiguration {
-        let containerName = Self.containerName(project: project.name, service: serviceName, config: service)
+        let containerName = Self.replicaName(project: project.name, service: serviceName, config: service, replica: replica)
 
         // Resolve the image and its default process config.
         let imageRef = service.image ?? Self.imageRef(project: project.name, service: serviceName)
@@ -756,6 +801,21 @@ public struct ComposeOrchestrator: Sendable {
         // (a bare name makes bootstrap fail with EOPNOTSUPP).
         mounts = try await resolveVolumeSources(mounts)
 
+        // Configs (under /) and secrets (under /run/secrets) with a file: source,
+        // mounted read-only at their target.
+        mounts += try Self.fileRefMounts(
+            service.configs,
+            files: try Self.referenceFiles(project.configs.mapValues { ($0.file, $0.content) }, kind: "configs", project: project.name),
+            defaultDirectory: "",
+            serviceName: serviceName, project: project, filePath: filePath
+        )
+        mounts += try Self.fileRefMounts(
+            service.secrets,
+            files: try Self.referenceFiles(project.secrets.mapValues { ($0.file, $0.content) }, kind: "secrets", project: project.name),
+            defaultDirectory: "/run/secrets",
+            serviceName: serviceName, project: project, filePath: filePath
+        )
+
         // Published ports.
         var publishedPorts: [PublishPort] = []
         for spec in service.ports {
@@ -781,6 +841,7 @@ public struct ComposeOrchestrator: Sendable {
         var labels = service.labels
         labels[ComposeLabel.project] = project.name
         labels[ComposeLabel.service] = serviceName
+        labels[ComposeLabel.containerNumber] = String(replica)
         labels[ComposeLabel.workingDir] = URL(fileURLWithPath: filePath).deletingLastPathComponent().path
         labels[ComposeLabel.configFiles] = filePath
         labels[ComposeLabel.containerNumber] = "1"
@@ -918,6 +979,63 @@ public struct ComposeOrchestrator: Sendable {
         }
     }
 
+    /// Host file for each config or secret: its `file:` as given, or inline
+    /// `content:` written under Macker's state directory (mode 0600 for secrets).
+    static func referenceFiles(
+        _ definitions: [String: (file: String?, content: String?)],
+        kind: String,
+        project: String
+    ) throws -> [String: String] {
+        var files: [String: String] = [:]
+        for (name, definition) in definitions {
+            if let file = definition.file {
+                files[name] = file
+            } else if let content = definition.content {
+                let directory = inlineStateDirectory()
+                    .appendingPathComponent(sanitize(project), isDirectory: true)
+                    .appendingPathComponent(kind, isDirectory: true)
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                let url = directory.appendingPathComponent(sanitize(name))
+                try Data(content.utf8).write(to: url, options: .atomic)
+                try FileManager.default.setAttributes(
+                    [.posixPermissions: kind == "secrets" ? 0o600 : 0o644], ofItemAtPath: url.path
+                )
+                files[name] = url.path
+            }
+        }
+        return files
+    }
+
+    private static func inlineStateDirectory() -> URL {
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return support.appendingPathComponent("Macker/compose-inline", isDirectory: true)
+    }
+
+    /// Read-only bind mounts for configs or secrets. The target is the reference's
+    /// `target:`, else `<defaultDirectory>/<name>`. A reference without a file is an error.
+    static func fileRefMounts(
+        _ refs: [ServiceFileRef],
+        files: [String: String],
+        defaultDirectory: String,
+        serviceName: String,
+        project: ComposeProject,
+        filePath: String
+    ) throws -> [Filesystem] {
+        var mounts: [Filesystem] = []
+        let baseDirectory = URL(fileURLWithPath: filePath).deletingLastPathComponent()
+        for ref in refs {
+            guard let file = files[ref.source] else {
+                throw ComposeParseError.configWithoutFile(serviceName, ref.source)
+            }
+            let host = file.hasPrefix("/") ? file : baseDirectory.appendingPathComponent(file).path
+            let target = ref.target ?? "\(defaultDirectory)/\(ref.source)"
+            if let fs = parseVolumeSpec("\(host):\(target):ro", project: project, basePath: filePath) {
+                mounts.append(fs)
+            }
+        }
+        return mounts
+    }
+
     /// Replace the source of named-volume mounts with the volume's host path.
     /// The server rejects a bare volume name as a mount source (bootstrap
     /// fails with EOPNOTSUPP); the CLI always sends the resolved path.
@@ -940,6 +1058,17 @@ public struct ComposeOrchestrator: Sendable {
             }
         }
         return resolved
+    }
+
+    /// Container IDs for every replica of a service that exists for this project.
+    /// Falls back to the replica-1 name when none exist, so errors name the right container.
+    private func replicaIDs(project: ComposeProject, service name: String) async throws -> [String] {
+        let existing = try await projectContainers(project: project)
+            .filter { $0.configuration.labels[ComposeLabel.service] == name }
+            .map(\.id)
+            .sorted()
+        if !existing.isEmpty { return existing }
+        return [Self.containerName(project: project.name, service: name, config: project.services[name])]
     }
 
     /// The project's containers, found by the project label.
@@ -1240,33 +1369,76 @@ public struct ComposeOrchestrator: Sendable {
 
     /// Write `<service-name> <ip>` entries into every container's /etc/hosts so
     /// services resolve each other by name.
-    private func syncHosts(project: ComposeProject) async throws {
-        var ips: [String: String] = [:]
+    private func syncHosts(project: ComposeProject, scales: [String: Int]) async throws {
+        var ips: [String: [String]] = [:]
+        var members: [(service: String, container: String)] = []
         for name in project.services.keys {
-            let containerName = Self.containerName(project: project.name, service: name, config: project.services[name])
-            if let snapshot = try? await service.getContainer(id: containerName),
-               let ip = containerIP(snapshot) {
-                ips[name] = ip
+            let count = Self.replicaCount(for: name, in: project, scales: scales)
+            for replica in 1...count {
+                let containerName = Self.replicaName(project: project.name, service: name, config: project.services[name], replica: replica)
+                members.append((name, containerName))
+                if let snapshot = try? await service.getContainer(id: containerName),
+                   let ip = containerIP(snapshot) {
+                    ips[name, default: []].append(ip)
+                }
             }
         }
         guard !ips.isEmpty else { return }
 
-        for name in project.services.keys {
-            let containerName = Self.containerName(project: project.name, service: name, config: project.services[name])
+        for member in members {
             var entries = ""
-            for (otherName, ip) in ips where otherName != name {
-                entries += "\(ip) \(otherName)\n"
+            for (otherName, addresses) in ips where otherName != member.service {
+                for ip in addresses {
+                    entries += "\(ip) \(otherName)\n"
+                }
             }
             guard !entries.isEmpty else { continue }
             // Append to /etc/hosts via a shell command inside the container.
             let script = "printf '%s' '\(entries)' >> /etc/hosts"
-            _ = try? await runInContainer(containerId: containerName, command: ["sh", "-c", script])
+            _ = try? await runInContainer(containerId: member.container, command: ["sh", "-c", script])
+        }
+    }
+
+    /// Health of each running container that has an active healthcheck, keyed by
+    /// container ID: "healthy" or "unhealthy". Each check runs once per call.
+    public func healthStatus(project: ComposeProject) async -> [String: String] {
+        guard let containers = try? await projectContainers(project: project) else { return [:] }
+        var status: [String: String] = [:]
+        for container in containers where container.status == .running {
+            guard let serviceName = container.configuration.labels[ComposeLabel.service],
+                  let healthcheck = project.services[serviceName]?.healthcheck,
+                  !healthcheck.isDisabled else { continue }
+            let timeout = Self.parseDuration(healthcheck.timeout) ?? 30
+            let code = await Self.runWithTimeout(timeout) {
+                try await self.runHealthcheck(containerId: container.id, healthcheck: healthcheck)
+            }
+            status[container.id] = code == 0 ? "healthy" : "unhealthy"
+        }
+        return status
+    }
+
+    /// Runs `work` and returns its result, or nil if it has not finished within
+    /// `seconds`. The work is not cancelled: a hung check may keep running in the
+    /// background, but the caller is released at the deadline.
+    static func runWithTimeout(_ seconds: Double, _ work: @escaping @Sendable () async throws -> Int32) async -> Int32? {
+        await withCheckedContinuation { continuation in
+            let once = OnceFlag()
+            Task {
+                let code = try? await work()
+                if once.claim() { continuation.resume(returning: code) }
+            }
+            Task {
+                try? await Task.sleep(for: .seconds(seconds))
+                if once.claim() { continuation.resume(returning: nil) }
+            }
         }
     }
 
     /// Poll a container's healthcheck until it passes or the retries are
     /// exhausted.
     private func waitUntilHealthy(containerId: String, healthcheck: HealthCheckConfig) async throws {
+        // A disabled healthcheck has nothing to wait for.
+        guard !healthcheck.isDisabled else { return }
         let interval = Self.parseDuration(healthcheck.interval) ?? 5
         let retries = healthcheck.retries ?? 3
         let startPeriod = Self.parseDuration(healthcheck.startPeriod) ?? 0
@@ -1275,8 +1447,12 @@ public struct ComposeOrchestrator: Sendable {
             try await Task.sleep(for: .seconds(startPeriod))
         }
 
+        let timeout = Self.parseDuration(healthcheck.timeout) ?? 30
         for attempt in 0..<retries {
-            let exitCode = try? await runHealthcheck(containerId: containerId, healthcheck: healthcheck)
+            // A check that runs past its timeout counts as a failed attempt.
+            let exitCode = await Self.runWithTimeout(timeout) {
+                try await self.runHealthcheck(containerId: containerId, healthcheck: healthcheck)
+            }
             if exitCode == 0 {
                 return
             }
@@ -1337,5 +1513,20 @@ public struct ComposeOrchestrator: Sendable {
             total += n
         }
         return total
+    }
+}
+
+/// Lets exactly one of two racing continuations resume.
+private final class OnceFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var fired = false
+
+    /// Returns true only for the first caller.
+    func claim() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if fired { return false }
+        fired = true
+        return true
     }
 }

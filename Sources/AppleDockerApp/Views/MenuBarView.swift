@@ -22,84 +22,109 @@ struct MenuBarView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
+            header
+
             if config.hasMetrics {
                 metrics
             }
 
             if config.activeItems.contains(.containerList) {
-                Divider()
-                if state.containers.isEmpty {
-                    Text("No containers")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 4)
-                } else {
-                    containerList
-                }
-            }
-
-            if config.hasControls {
-                Divider()
-                controls
+                containerSection
             }
 
             Divider()
             footer
         }
-        .padding(8)
-        .frame(width: 300)
+        .padding(12)
+        .frame(width: 320)
         .sheet(item: $logsRequest) { request in
             LogsSheet(containerID: request.id)
+        }
+    }
+
+    // MARK: - Header
+
+    /// Title, runtime state and the actions menu, in one row.
+    private var header: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "shippingbox.fill")
+                .font(.title3)
+                .foregroundStyle(Color.accentColor)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Macker")
+                    .font(.headline)
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(state.isDaemonRunning ? Color.green : Color.red)
+                        .frame(width: 7, height: 7)
+                    Text(state.isDaemonRunning ? "Runtime running" : "Runtime unreachable")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            if config.activeItems.contains(.actions) {
+                Menu {
+                    runtimeMenu
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("Runtime actions")
+            }
         }
     }
 
     // MARK: - Metrics
 
     private var metrics: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 16) {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
                 if config.activeItems.contains(.cpuRing) {
-                    ring(
+                    ringCard(
                         value: state.totalCPUPercent / 100,
-                        label: "CPU",
+                        title: "CPU",
+                        detail: String(format: "%.1f%%", state.totalCPUPercent),
                         color: .blue
                     )
                 }
                 if config.activeItems.contains(.memoryRing) {
-                    ring(
+                    ringCard(
                         value: state.totalMemoryLimitBytes > 0
                             ? Double(state.totalMemoryBytes) / Double(state.totalMemoryLimitBytes)
                             : 0,
-                        label: "Mem",
+                        title: "Memory",
+                        detail: formatBytes(state.totalMemoryBytes),
                         color: .orange
                     )
                 }
-                Spacer()
-                if config.activeItems.contains(.runtimeStatus) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Macker")
-                            .font(.headline)
-                        Text(state.isDaemonRunning ? "Runtime running" : "Runtime unreachable")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
             }
-            .padding(.horizontal, 4)
 
             if !textMetrics.isEmpty {
-                LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading),
-                                    GridItem(.flexible(), alignment: .trailing)],
-                          alignment: .leading, spacing: 4) {
+                LazyVGrid(
+                    columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)],
+                    spacing: 8
+                ) {
                     ForEach(textMetrics, id: \.label) { metric in
-                        Text(metric.label)
-                            .foregroundStyle(.secondary)
-                        Text(metric.value)
-                            .fontWeight(.medium)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(metric.label)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            Text(metric.value)
+                                .font(.callout.weight(.semibold))
+                                .monospacedDigit()
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
                     }
                 }
-                .padding(.horizontal, 4)
             }
         }
     }
@@ -166,15 +191,44 @@ struct MenuBarView: View {
         return groups
     }
 
+    private var containerSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Containers")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("\(state.runningCount) of \(state.containers.count) running")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if state.containers.isEmpty {
+                VStack(spacing: 6) {
+                    Image(systemName: "shippingbox")
+                        .font(.title2)
+                        .foregroundStyle(.tertiary)
+                    Text("No containers yet")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+            } else {
+                containerList
+            }
+        }
+    }
+
     private var containerList: some View {
         ForEach(containerGroups) { group in
             VStack(alignment: .leading, spacing: 2) {
-                Text(group.title)
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 4)
-                    .padding(.top, 2)
+                if group.containers.count > 1 || group.title != group.containers.first?.id {
+                    Text(group.title)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                        .padding(.horizontal, 6)
+                        .padding(.top, 4)
+                }
 
                 ForEach(group.containers.prefix(config.maxContainers)) { container in
                     containerRow(container)
@@ -186,9 +240,17 @@ struct MenuBarView: View {
     private func containerRow(_ container: ContainerSnapshot) -> some View {
         HStack(spacing: 8) {
             StatusDot(status: container.status)
-            Text(container.id)
-                .lineLimit(1)
-                .truncationMode(.middle)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(container.id)
+                    .font(.callout.weight(.medium))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text(container.configuration.image.reference)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
             Spacer()
             Menu {
                 if container.status == .running {
@@ -222,50 +284,30 @@ struct MenuBarView: View {
             .buttonStyle(.borderless)
             .menuIconHover()
         }
-        .padding(.horizontal, 4)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .menuHover()
     }
 
-    // MARK: - Controls
+    // MARK: - Actions
 
-    /// The configurable quick controls (Refresh / Actions) shown above the
-    /// footer.
-    private var controls: some View {
-        Group {
-            if config.activeItems.contains(.refresh) {
-                Button("Refresh") {
-                    Task { @MainActor in await state.refresh() }
-                }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 4)
-                .menuHover()
-            }
-
-            if config.activeItems.contains(.actions) {
-                Menu {
-                    runtimeMenu
-                } label: {
-                    Label("Ações", systemImage: "gearshape")
-                }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 4)
-                .menuHover()
-            }
-        }
-    }
-
-    /// The runtime / app commands shared by the Actions menu and the footer.
+    /// Runtime and app commands, shared by the header menu and the footer.
     private var runtimeMenu: some View {
         Group {
-            Button("Parar serviço") {
+            Button("Refresh") {
+                Task { @MainActor in await state.refresh() }
+            }
+
+            Divider()
+
+            Button("Stop runtime") {
                 Task { @MainActor in await state.stopDaemon() }
             }
             .disabled(!state.isDaemonRunning)
 
-            Button("Reiniciar") {
+            Button("Restart runtime") {
                 Task { @MainActor in await state.restartDaemon() }
             }
-
-            Divider()
 
             Button("Prune build cache") {
                 Task { @MainActor in await state.deleteBuildkitBuilder() }
@@ -274,73 +316,77 @@ struct MenuBarView: View {
 
             Divider()
 
-            Button("Restaurar UI padrão") {
+            Button("Reset menu bar layout") {
                 config = MenuBarConfig()
             }
 
-            Divider()
-
-            Button("Fechar Macker", role: .destructive) {
+            Button("Quit Macker", role: .destructive) {
                 NSApp.terminate(nil)
             }
         }
     }
 
-    /// The footer: a prominent "Open Macker" button plus a compact row
-    /// of icon actions (Refresh, Runtime, Restore, Quit).
+    /// Footer: refresh and the open-window action, sized to sit under the list.
     private var footer: some View {
-        VStack(spacing: 8) {
+        HStack(spacing: 8) {
+            if config.activeItems.contains(.refresh) {
+                footerIcon("arrow.clockwise", "Refresh") {
+                    Task { @MainActor in await state.refresh() }
+                }
+            }
+            Spacer()
             Button {
                 openWindow(id: "main")
             } label: {
-                Label("Open Macker", systemImage: "shippingbox")
-                    .frame(maxWidth: .infinity)
+                Label("Open Macker", systemImage: "macwindow")
             }
             .buttonStyle(.borderedProminent)
-            .controlSize(.regular)
-
-            HStack(spacing: 4) {
-                if config.activeItems.contains(.refresh) {
-                    footerIcon("arrow.clockwise", "Refresh") {
-                        Task { @MainActor in await state.refresh() }
-                    }
-                }
-                if config.activeItems.contains(.actions) {
-                    Menu {
-                        runtimeMenu
-                    } label: {
-                        Image(systemName: "gearshape")
-                    }
-                    .menuStyle(.borderlessButton)
-                    .menuIconHover()
-                    .help("Ações")
-                }
-                Spacer()
-            }
+            .controlSize(.small)
         }
     }
 
-    /// A small circular icon button used in the footer action row.
+    /// A small circular icon button used in the footer.
     private func footerIcon(_ systemImage: String, _ help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .frame(width: 20, height: 20)
+                .font(.system(size: 12, weight: .semibold))
+                .frame(width: 24, height: 24)
         }
         .buttonStyle(.borderless)
         .menuIconHover()
         .help(help)
     }
 
-    private func ring(value: Double, label: String, color: Color) -> some View {
-        Gauge(value: min(max(value, 0), 1), in: 0...1) {
-            Text(label)
-        } currentValueLabel: {
-            Text("\(Int(value * 100))%")
-                .font(.caption2)
+    /// A circular gauge with the value in the middle and a title and detail below.
+    private func ringCard(value: Double, title: String, detail: String, color: Color) -> some View {
+        let fraction = min(max(value, 0), 1)
+        return VStack(spacing: 6) {
+            ZStack {
+                Circle()
+                    .stroke(color.opacity(0.18), lineWidth: 6)
+                Circle()
+                    .trim(from: 0, to: fraction)
+                    .stroke(color, style: StrokeStyle(lineWidth: 6, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .animation(.easeOut(duration: 0.3), value: fraction)
+                Text("\(Int((fraction * 100).rounded()))%")
+                    .font(.caption.weight(.semibold))
+                    .monospacedDigit()
+            }
+            .frame(width: 56, height: 56)
+            VStack(spacing: 1) {
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                Text(detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .lineLimit(1)
+            }
         }
-        .gaugeStyle(.accessoryCircularCapacity)
-        .tint(color)
-        .frame(width: 44, height: 44)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 10)
+        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
     }
 
     private func formatBytes(_ bytes: UInt64) -> String {

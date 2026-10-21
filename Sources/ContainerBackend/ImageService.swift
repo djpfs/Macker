@@ -94,9 +94,12 @@ public struct ImageService: Sendable {
     }
 
     /// Authenticate to an OCI registry without exposing the password in args.
-    public func login(registry: String, username: String, password: String) async throws {
+    public func login(registry: String, username: String, password: String, scheme: String? = nil) async throws {
+        var args = ["registry", "login", "--username", username, "--password-stdin"]
+        if let scheme { args += ["--scheme", scheme] }
+        args.append(registry)
         let result = try await runner.run(
-            ["registry", "login", "--username", username, "--password-stdin", registry],
+            args,
             standardInput: Data((password + "\n").utf8),
             timeout: .seconds(60)
         )
@@ -105,6 +108,30 @@ public struct ImageService: Sendable {
                 "registry login failed: \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))"
             )
         }
+    }
+
+    /// Remove the stored credentials for a registry.
+    public func logout(registry: String) async throws {
+        let result = try await runner.run(["registry", "logout", registry], timeout: .seconds(30))
+        guard result.succeeded else {
+            throw BackendError.operationFailed(
+                "registry logout failed: \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))"
+            )
+        }
+    }
+
+    /// Registries that have stored credentials.
+    public func loggedInRegistries() async throws -> [String] {
+        let result = try await runner.run(["registry", "list", "--quiet"], timeout: .seconds(30))
+        guard result.succeeded else {
+            throw BackendError.operationFailed(
+                "registry list failed: \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))"
+            )
+        }
+        return result.stdout
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
     }
 
     /// Build an image from a Dockerfile or Containerfile.
