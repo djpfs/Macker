@@ -44,21 +44,36 @@ public struct LaunchdManager: Sendable {
         }
     }
 
-    /// Query the current daemon state.
+    /// Query the current daemon state from `container system status --format json`.
+    /// The CLI exits non-zero when the services are down but still prints the
+    /// JSON payload, so the exit code is ignored and only the payload is read.
     public func status() async -> DaemonState {
         do {
-            let result = try await runner.run(["system", "status"], timeout: .seconds(10))
-            let output = result.stdout + result.stderr
-            if result.succeeded {
-                return .running
-            }
-            let lower = output.lowercased()
-            if lower.contains("not running") || lower.contains("stopped") || lower.contains("inactive") {
-                return .stopped
-            }
-            return .unknown(output.trimmingCharacters(in: .whitespacesAndNewlines))
+            let result = try await runner.run(["system", "status", "--format", "json"], timeout: .seconds(10))
+            return Self.parseStatus(result.stdout, fallback: result.stderr)
         } catch {
             return .unknown(error.localizedDescription)
         }
+    }
+
+    /// Maps the `status` field of the CLI JSON payload to a `DaemonState`.
+    /// `fallback` (stderr) is used as the reason when the payload is unreadable.
+    static func parseStatus(_ stdout: String, fallback: String) -> DaemonState {
+        guard let report = try? JSONDecoder().decode(StatusReport.self, from: Data(stdout.utf8)) else {
+            let reason = fallback.trimmingCharacters(in: .whitespacesAndNewlines)
+            return .unknown(reason.isEmpty ? "unreadable system status output" : reason)
+        }
+        switch report.status {
+        case "running":
+            return .running
+        case "not running", "unregistered":
+            return .stopped
+        default:
+            return .unknown(report.status)
+        }
+    }
+
+    private struct StatusReport: Decodable {
+        let status: String
     }
 }
