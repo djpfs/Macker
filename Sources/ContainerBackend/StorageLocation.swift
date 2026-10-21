@@ -102,12 +102,16 @@ public struct StorageLocation: Sendable {
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
+    /// Copies `source` to `destination`. `allocationLimit` is the most space the
+    /// copy may occupy on disk; a copy that exceeds it must stop with an error.
+    public typealias CopyFunction = (_ source: URL, _ destination: URL, _ allocationLimit: UInt64) throws -> Void
+
     /// Copies the store into `parent/<name>`, verifies the copy, and swaps the
     /// default path for a symlink to it. On any failure the original is put
     /// back and the partial copy is removed.
     public func move(
         toParent parent: URL,
-        copy: (URL, URL) throws -> Void = StorageLocation.dittoCopy,
+        copy: CopyFunction = StorageLocation.sparseCopy,
         availableCapacity: (URL) -> UInt64 = StorageLocation.availableCapacity
     ) throws -> StorageMoveResult {
         let fm = FileManager.default
@@ -128,8 +132,8 @@ public struct StorageLocation: Sendable {
         }
 
         let source = link
-        // Sparse disk images copy as sparse files (ditto keeps them sparse), so
-        // the room needed is the allocated size, not the logical one.
+        // Sparse disk images copy as sparse files, so the room needed is the
+        // allocated size, not the logical one.
         let needed = Self.allocatedSize(source)
         let available = availableCapacity(parent)
         // A safety margin: the copy also needs room for metadata.
@@ -137,12 +141,18 @@ public struct StorageLocation: Sendable {
         guard available >= required else {
             throw StorageLocationError.notEnoughSpace(needed: required, available: available)
         }
+        // The copy may use up to 1.5x the source's allocated space, plus 64 MB.
+        let allocationLimit = needed + needed / 2 + 64_000_000
 
         do {
-            try copy(source, destination)
+            try copy(source, destination, allocationLimit)
         } catch {
             try? fm.removeItem(at: destination)
             throw StorageLocationError.copyFailed(error.localizedDescription)
+        }
+        guard Self.allocatedSize(destination) <= allocationLimit else {
+            try? fm.removeItem(at: destination)
+            throw StorageLocationError.copyFailed("the copy occupies more space than expected")
         }
 
         // Compare logical sizes on both sides: the copy preserves them exactly.
@@ -188,16 +198,34 @@ public struct StorageLocation: Sendable {
         try FileManager.default.removeItem(at: backup)
     }
 
-    /// Copies a folder with `ditto`, which keeps sparse files and attributes.
-    public static func dittoCopy(from source: URL, to destination: URL) throws {
+    /// Copies a folder with `rsync --sparse`, which keeps holes in sparse files.
+    /// The copy is watched while it runs: if the space it occupies passes
+    /// `allocationLimit`, rsync is stopped and an error is thrown, so a copy
+    /// that expands sparse files cannot fill the disk.
+    public static func sparseCopy(from source: URL, to destination: URL, allocationLimit: UInt64) throws {
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
-        process.arguments = [source.path, destination.path]
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/rsync")
+        process.arguments = ["-a", "--sparse", source.path + "/", destination.path + "/"]
         let errors = Pipe()
         process.standardError = errors
+        process.standardOutput = FileHandle.nullDevice
         try process.run()
-        let stderr = String(decoding: errors.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+
+        var exceeded = false
+        while process.isRunning {
+            Thread.sleep(forTimeInterval: 1)
+            if allocatedSize(destination) > allocationLimit {
+                exceeded = true
+                process.terminate()
+                break
+            }
+        }
         process.waitUntilExit()
+        let stderr = String(decoding: errors.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        if exceeded {
+            throw StorageLocationError.copyFailed("the copy grew past the expected size and was stopped")
+        }
         guard process.terminationStatus == 0 else {
             throw StorageLocationError.copyFailed(stderr.trimmingCharacters(in: .whitespacesAndNewlines))
         }

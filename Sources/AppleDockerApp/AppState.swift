@@ -714,7 +714,10 @@ final class AppState {
             storageMessage = "Copying the storage to \(parent.path)…"
             let result: StorageMoveResult
             do {
-                result = try location.move(toParent: parent)
+                // The copy can take minutes; keep it off the main thread so the window stays responsive.
+                result = try await Task.detached(priority: .userInitiated) {
+                    try location.move(toParent: parent)
+                }.value
             } catch {
                 try? await service.daemon.start()
                 throw error

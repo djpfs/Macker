@@ -66,7 +66,7 @@ final class StorageLocationTests: XCTestCase {
         let parent = try makeDestinationParent()
         struct Boom: Error {}
 
-        XCTAssertThrowsError(try store.move(toParent: parent, copy: { _, _ in throw Boom() })) { error in
+        XCTAssertThrowsError(try store.move(toParent: parent, copy: { _, _, _ in throw Boom() })) { error in
             guard case StorageLocationError.copyFailed = error else {
                 return XCTFail("expected copyFailed, got \(error)")
             }
@@ -88,7 +88,7 @@ final class StorageLocationTests: XCTestCase {
             try Data(repeating: 1, count: 10).write(to: destination.appendingPathComponent("content/blob"))
         }
 
-        XCTAssertThrowsError(try store.move(toParent: parent, copy: partial)) { error in
+        XCTAssertThrowsError(try store.move(toParent: parent, copy: { source, destination, _ in try partial(source, destination) })) { error in
             guard case StorageLocationError.sizeMismatch = error else {
                 return XCTFail("expected sizeMismatch, got \(error)")
             }
