@@ -1,0 +1,4 @@
+{
+  "name": "Macker (Swift on Linux)",
+  "install": "./.cursor/install.sh"
+}

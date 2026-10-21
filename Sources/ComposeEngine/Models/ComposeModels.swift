@@ -81,6 +81,10 @@ public struct ServiceConfig: Sendable, Codable, Equatable {
     public var expose: [String]
     /// Volume mounts, e.g. `"./html:/usr/share/nginx/html:ro"`.
     public var volumes: [String]
+    /// Named secrets referenced by this service.
+    public var secrets: [String]
+    /// Named configs referenced by this service.
+    public var configs: [String]
     /// Networks this service joins.
     public var networks: [String]
     /// Services this service depends on, with their conditions.
@@ -117,10 +121,16 @@ public struct ServiceConfig: Sendable, Codable, Equatable {
     public var extraHosts: [String]
     /// DNS servers.
     public var dns: [String]
+    /// DNS search domains.
+    public var dnsSearch: [String]
+    /// DNS resolver options (e.g. `["ndots:5"]`).
+    public var dnsOpt: [String]
     /// Linux capabilities to add.
     public var capAdd: [String]
     /// Linux capabilities to drop.
     public var capDrop: [String]
+    /// Extra security options.
+    public var securityOpt: [String]
     /// Size of /dev/shm.
     public var shmSize: String?
     /// Keep stdin open.
@@ -142,6 +152,8 @@ public struct ServiceConfig: Sendable, Codable, Equatable {
         ports: [String] = [],
         expose: [String] = [],
         volumes: [String] = [],
+        secrets: [String] = [],
+        configs: [String] = [],
         networks: [String] = [],
         dependsOn: [String: DependsOnCondition] = [:],
         healthcheck: HealthCheckConfig? = nil,
@@ -160,8 +172,11 @@ public struct ServiceConfig: Sendable, Codable, Equatable {
         stopSignal: String? = nil,
         extraHosts: [String] = [],
         dns: [String] = [],
+        dnsSearch: [String] = [],
+        dnsOpt: [String] = [],
         capAdd: [String] = [],
         capDrop: [String] = [],
+        securityOpt: [String] = [],
         shmSize: String? = nil,
         stdinOpen: Bool = false,
         tty: Bool = false,
@@ -177,6 +192,8 @@ public struct ServiceConfig: Sendable, Codable, Equatable {
         self.ports = ports
         self.expose = expose
         self.volumes = volumes
+        self.secrets = secrets
+        self.configs = configs
         self.networks = networks
         self.dependsOn = dependsOn
         self.healthcheck = healthcheck
@@ -195,8 +212,11 @@ public struct ServiceConfig: Sendable, Codable, Equatable {
         self.stopSignal = stopSignal
         self.extraHosts = extraHosts
         self.dns = dns
+        self.dnsSearch = dnsSearch
+        self.dnsOpt = dnsOpt
         self.capAdd = capAdd
         self.capDrop = capDrop
+        self.securityOpt = securityOpt
         self.shmSize = shmSize
         self.stdinOpen = stdinOpen
         self.tty = tty
@@ -214,6 +234,8 @@ public struct ServiceConfig: Sendable, Codable, Equatable {
         case ports
         case expose
         case volumes
+        case secrets
+        case configs
         case networks
         case dependsOn = "depends_on"
         case healthcheck
@@ -232,8 +254,11 @@ public struct ServiceConfig: Sendable, Codable, Equatable {
         case stopSignal = "stop_signal"
         case extraHosts = "extra_hosts"
         case dns
+        case dnsSearch = "dns_search"
+        case dnsOpt = "dns_opt"
         case capAdd = "cap_add"
         case capDrop = "cap_drop"
+        case securityOpt = "security_opt"
         case shmSize = "shm_size"
         case stdinOpen = "stdin_open"
         case tty
@@ -252,6 +277,8 @@ public struct ServiceConfig: Sendable, Codable, Equatable {
         ports = try c.decodeIfPresent(PortList.self, forKey: .ports)?.values ?? []
         expose = try c.decodeIfPresent([String].self, forKey: .expose) ?? []
         volumes = try c.decodeIfPresent([String].self, forKey: .volumes) ?? []
+        secrets = try c.decodeIfPresent(StringOrList.self, forKey: .secrets)?.values ?? []
+        configs = try c.decodeIfPresent(StringOrList.self, forKey: .configs)?.values ?? []
         networks = try c.decodeIfPresent(NetworkList.self, forKey: .networks)?.names ?? []
         dependsOn = try c.decodeIfPresent(DependsOnMap.self, forKey: .dependsOn)?.conditions ?? [:]
         healthcheck = try c.decodeIfPresent(HealthCheckConfig.self, forKey: .healthcheck)
@@ -270,8 +297,11 @@ public struct ServiceConfig: Sendable, Codable, Equatable {
         stopSignal = try c.decodeIfPresent(String.self, forKey: .stopSignal)
         extraHosts = try c.decodeIfPresent([String].self, forKey: .extraHosts) ?? []
         dns = try c.decodeIfPresent([String].self, forKey: .dns) ?? []
+        dnsSearch = try c.decodeIfPresent([String].self, forKey: .dnsSearch) ?? []
+        dnsOpt = try c.decodeIfPresent([String].self, forKey: .dnsOpt) ?? []
         capAdd = try c.decodeIfPresent([String].self, forKey: .capAdd) ?? []
         capDrop = try c.decodeIfPresent([String].self, forKey: .capDrop) ?? []
+        securityOpt = try c.decodeIfPresent([String].self, forKey: .securityOpt) ?? []
         shmSize = try c.decodeIfPresent(String.self, forKey: .shmSize)
         stdinOpen = try c.decodeIfPresent(Bool.self, forKey: .stdinOpen) ?? false
         tty = try c.decodeIfPresent(Bool.self, forKey: .tty) ?? false
@@ -527,19 +557,58 @@ public struct NetworkConfig: Sendable, Codable, Equatable {
     public var driver: String?
     /// Whether the network is external (pre-existing).
     public var external: Bool
-    /// The external network's name.
+    /// The external network's name (or custom internal name).
     public var name: String?
+    /// IPAM configuration for custom subnet allocation.
+    public var ipam: IPAMConfig?
 
-    public init(driver: String? = nil, external: Bool = false, name: String? = nil) {
+    /// IPAM (IP Address Management) configuration.
+    public struct IPAMConfig: Sendable, Codable, Equatable {
+        /// The IPAM driver.
+        public var driver: String?
+        /// Per-subnet configuration entries.
+        public var config: [IPAMPool]
+
+        public init(driver: String? = nil, config: [IPAMPool] = []) {
+            self.driver = driver
+            self.config = config
+        }
+    }
+
+    /// A single IPAM subnet pool entry.
+    public struct IPAMPool: Sendable, Codable, Equatable {
+        /// The subnet in CIDR notation (e.g. `"172.28.0.0/16"`).
+        public var subnet: String?
+        /// The IP range allocated from the subnet (e.g. `"172.28.5.0/24"`).
+        public var ipRange: String?
+        /// The gateway address for the subnet (e.g. `"172.28.5.254"`).
+        public var gateway: String?
+
+        public init(subnet: String? = nil, ipRange: String? = nil, gateway: String? = nil) {
+            self.subnet = subnet
+            self.ipRange = ipRange
+            self.gateway = gateway
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case subnet
+            case ipRange = "ip_range"
+            case gateway
+        }
+    }
+
+    public init(driver: String? = nil, external: Bool = false, name: String? = nil, ipam: IPAMConfig? = nil) {
         self.driver = driver
         self.external = external
         self.name = name
+        self.ipam = ipam
     }
 
     enum CodingKeys: String, CodingKey {
         case driver
         case external
         case name
+        case ipam
     }
 
     public init(from decoder: Decoder) throws {
@@ -552,6 +621,7 @@ public struct NetworkConfig: Sendable, Codable, Equatable {
             external = c.contains(.external)
         }
         name = try c.decodeIfPresent(String.self, forKey: .name)
+        ipam = try c.decodeIfPresent(IPAMConfig.self, forKey: .ipam)
     }
 }
 

@@ -107,6 +107,20 @@ final class DockerShimTests: XCTestCase {
         XCTAssertEqual(cmd.arguments, ["nginx"])
     }
 
+    func testSecretCreateCommand() throws {
+        let cmd = try DockerCommandParser.parse(["secret", "create", "db-pass", "-"])
+        XCTAssertEqual(cmd.subcommand, "secret")
+        XCTAssertEqual(cmd.subSubcommand, "create")
+        XCTAssertEqual(cmd.arguments, ["db-pass", "-"])
+    }
+
+    func testScanCommandWithSeverity() throws {
+        let cmd = try DockerCommandParser.parse(["scan", "--severity", "HIGH,CRITICAL", "nginx:latest"])
+        XCTAssertEqual(cmd.subcommand, "scan")
+        XCTAssertEqual(cmd.value("severity"), "HIGH,CRITICAL")
+        XCTAssertEqual(cmd.arguments, ["nginx:latest"])
+    }
+
     // MARK: - Positional separator
 
     func testDoubleDashSeparator() throws {

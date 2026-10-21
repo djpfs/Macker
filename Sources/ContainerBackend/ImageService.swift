@@ -52,9 +52,17 @@ public struct ImageSummary: Sendable, Codable, Identifiable, Equatable {
 /// Manages images via the `container image` CLI.
 public struct ImageService: Sendable {
     private let runner: ProcessRunner
+    private let scanner: VulnerabilityScanner
+    private let auditLogger: AuditLogger
 
-    public init(runner: ProcessRunner = ProcessRunner()) {
+    public init(
+        runner: ProcessRunner = ProcessRunner(),
+        scanner: VulnerabilityScanner = VulnerabilityScanner(),
+        auditLogger: AuditLogger = .shared
+    ) {
         self.runner = runner
+        self.scanner = scanner
+        self.auditLogger = auditLogger
     }
 
     /// List all images.
@@ -74,6 +82,7 @@ public struct ImageService: Sendable {
         if let platform {
             args += ["--platform", platform]
         }
+
         args.append(reference)
         let result = try await runner.run(args, timeout: .seconds(600))
         guard result.succeeded else {
@@ -81,6 +90,55 @@ public struct ImageService: Sendable {
                 "image pull failed: \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))"
             )
         }
+        await auditLogger.record(action: "image.pull", target: reference, succeeded: true)
+    }
+
+    /// Authenticate to an OCI registry without exposing the password in args.
+    public func login(registry: String, username: String, password: String) async throws {
+        let result = try await runner.run(
+            ["registry", "login", "--username", username, "--password-stdin", registry],
+            standardInput: Data((password + "\n").utf8),
+            timeout: .seconds(60)
+        )
+        guard result.succeeded else {
+            throw BackendError.operationFailed(
+                "registry login failed: \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))"
+            )
+        }
+    }
+
+    /// Build an image from a Dockerfile or Containerfile.
+    ///
+    /// - Parameters:
+    ///   - context: Path to the build context directory.
+    ///   - dockerfile: Optional path to a Dockerfile/Containerfile.
+    ///   - tags: Image tags to apply, e.g. `["registry.example.com/app:latest"]`.
+    ///   - buildArgs: Build-time variables passed as `--build-arg KEY=VALUE`.
+    ///   - useCache: When `false`, passes `--no-cache` to disable layer caching.
+    /// - Returns: Combined CLI output (stdout preferred, stderr as fallback).
+    @discardableResult
+    public func build(
+        context: String,
+        dockerfile: String? = nil,
+        tags: [String] = [],
+        buildArgs: [String: String] = [:],
+        useCache: Bool = true
+    ) async throws -> String {
+        var args = ["build", "--progress", "plain"]
+        for tag in tags { args += ["-t", tag] }
+        if let dockerfile, !dockerfile.isEmpty { args += ["-f", dockerfile] }
+        for (key, value) in buildArgs.sorted(by: { $0.key < $1.key }) {
+            args += ["--build-arg", "\(key)=\(value)"]
+        }
+        if !useCache { args.append("--no-cache") }
+        args.append(context)
+        let result = try await runner.run(args, timeout: .seconds(1800))
+        guard result.succeeded else {
+            throw BackendError.operationFailed(
+                "image build failed: \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))"
+            )
+        }
+        return result.stdout.isEmpty ? result.stderr : result.stdout
     }
 
     /// Delete one or more images by ID or reference.
@@ -92,6 +150,7 @@ public struct ImageService: Sendable {
                 "image delete failed: \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))"
             )
         }
+        await auditLogger.record(action: "image.delete", target: references.joined(separator: ","), succeeded: true)
     }
 
     /// Tag an image with a new reference.
@@ -102,6 +161,7 @@ public struct ImageService: Sendable {
                 "image tag failed: \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))"
             )
         }
+        await auditLogger.record(action: "image.tag", target: "\(source)->\(target)", succeeded: true)
     }
 
     /// Push an image to its registry.
@@ -112,6 +172,7 @@ public struct ImageService: Sendable {
                 "image push failed: \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))"
             )
         }
+        await auditLogger.record(action: "image.push", target: reference, succeeded: true)
     }
 
     /// Remove unused images. When `all` is true, removes ALL images (not just
@@ -127,6 +188,19 @@ public struct ImageService: Sendable {
             throw BackendError.operationFailed(
                 "image prune failed: \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))"
             )
+        }
+        await auditLogger.record(action: "image.prune", target: all ? "all" : "dangling", succeeded: true)
+    }
+
+    /// Scan an image for known vulnerabilities.
+    public func scan(reference: String, severities: [String] = ["CRITICAL", "HIGH", "MEDIUM", "LOW"]) async throws -> VulnerabilityScanReport {
+        do {
+            let report = try await scanner.scan(imageReference: reference, severities: severities)
+            await auditLogger.record(action: "image.scan", target: reference, succeeded: true)
+            return report
+        } catch {
+            await auditLogger.record(action: "image.scan", target: reference, succeeded: false, detail: error.localizedDescription)
+            throw error
         }
     }
 

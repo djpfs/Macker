@@ -24,6 +24,79 @@ final class ComposeEngineTests: XCTestCase {
         XCTAssertEqual(web.environment["FOO"], "bar")
     }
 
+    func testParseProfilesAndServiceAttachments() throws {
+        let yaml = """
+        secrets:
+          db_password:
+            file: ./password.txt
+        configs:
+          app_config:
+            file: ./app.conf
+        services:
+          web:
+            image: nginx
+            profiles: ["frontend"]
+            secrets: [db_password]
+            configs: [app_config]
+          worker:
+            image: alpine
+            profiles: ["worker"]
+        """
+        let project = try ComposeParser().parse(yaml: yaml, profiles: ["frontend"])
+        XCTAssertEqual(project.services.count, 1)
+        XCTAssertNotNil(project.services["web"])
+        XCTAssertEqual(project.services["web"]?.secrets, ["db_password"])
+        XCTAssertEqual(project.services["web"]?.configs, ["app_config"])
+
+        let missingSecretYAML = """
+        services:
+          web:
+            image: nginx
+            secrets: [missing_secret]
+        """
+        XCTAssertThrowsError(try ComposeParser().parse(yaml: missingSecretYAML)) { error in
+            guard case ComposeParseError.unknownSecret("web", "missing_secret") = error else {
+                return XCTFail("expected unknownSecret, got \(error)")
+            }
+        }
+
+        let missingConfigYAML = """
+        services:
+          web:
+            image: nginx
+            configs: [missing_config]
+        """
+        XCTAssertThrowsError(try ComposeParser().parse(yaml: missingConfigYAML)) { error in
+            guard case ComposeParseError.unknownConfig("web", "missing_config") = error else {
+                return XCTFail("expected unknownConfig, got \(error)")
+            }
+        }
+    }
+
+    func testUndefinedSecretThrowsError() throws {
+        let yaml = """
+        services:
+          web:
+            image: nginx
+            secrets: [nonexistent_secret]
+        """
+        XCTAssertThrowsError(try ComposeParser().parse(yaml: yaml)) { error in
+            XCTAssertEqual(error as? ComposeParseError, .unknownSecret("web", "nonexistent_secret"))
+        }
+    }
+
+    func testUndefinedConfigThrowsError() throws {
+        let yaml = """
+        services:
+          web:
+            image: nginx
+            configs: [nonexistent_config]
+        """
+        XCTAssertThrowsError(try ComposeParser().parse(yaml: yaml)) { error in
+            XCTAssertEqual(error as? ComposeParseError, .unknownConfig("web", "nonexistent_config"))
+        }
+    }
+
     func testParseDefaultsNameToDirectory() throws {
         let yaml = """
         services:
@@ -204,15 +277,45 @@ final class ComposeEngineTests: XCTestCase {
 
     func testParsePortSpec() {
         let simple = ComposeOrchestrator.parsePortSpec("8080:80")
-        XCTAssertEqual(simple?.hostPort, 8080)
-        XCTAssertEqual(simple?.containerPort, 80)
+        XCTAssertEqual(simple.first?.hostPort, 8080)
+        XCTAssertEqual(simple.first?.containerPort, 80)
 
         let bound = ComposeOrchestrator.parsePortSpec("127.0.0.1:8080:80")
-        XCTAssertEqual(bound?.hostAddress.rawValue, "127.0.0.1")
+        XCTAssertEqual(bound.first?.hostAddress.rawValue, "127.0.0.1")
 
         let single = ComposeOrchestrator.parsePortSpec("80")
-        XCTAssertEqual(single?.hostPort, 80)
-        XCTAssertEqual(single?.containerPort, 80)
+        XCTAssertEqual(single.first?.hostPort, 80)
+        XCTAssertEqual(single.first?.containerPort, 80)
+    }
+
+    func testParsePortSpecUDP() {
+        let udp = ComposeOrchestrator.parsePortSpec("5353:53/udp")
+        XCTAssertEqual(udp.count, 1)
+        XCTAssertEqual(udp.first?.hostPort, 5353)
+        XCTAssertEqual(udp.first?.containerPort, 53)
+        XCTAssertEqual(udp.first?.proto, .udp)
+    }
+
+    func testParsePortSpecRange() {
+        let range = ComposeOrchestrator.parsePortSpec("8080-8082:80-82")
+        XCTAssertEqual(range.count, 3)
+        XCTAssertEqual(range[0].hostPort, 8080)
+        XCTAssertEqual(range[0].containerPort, 80)
+        XCTAssertEqual(range[2].hostPort, 8082)
+        XCTAssertEqual(range[2].containerPort, 82)
+        XCTAssertEqual(range[0].proto, .tcp)
+    }
+
+    func testParsePortSpecRangeUDP() {
+        let range = ComposeOrchestrator.parsePortSpec("9000-9001:9000-9001/udp")
+        XCTAssertEqual(range.count, 2)
+        XCTAssertEqual(range[0].proto, .udp)
+        XCTAssertEqual(range[1].hostPort, 9001)
+    }
+
+    func testParsePortSpecInvalid() {
+        XCTAssertTrue(ComposeOrchestrator.parsePortSpec("notaport").isEmpty)
+        XCTAssertTrue(ComposeOrchestrator.parsePortSpec("8080-8082:80-81").isEmpty) // mismatched range lengths
     }
 
     func testParseMemory() {
@@ -343,5 +446,139 @@ final class ComposeEngineTests: XCTestCase {
         let project = try ComposeParser().parse(yaml: yaml)
         let web = try XCTUnwrap(project.services["web"])
         XCTAssertEqual(web.ports, ["8080:80"])
+    }
+
+    // MARK: - Advanced networking: DNS search / options
+
+    func testDnsSearchAndOptions() throws {
+        let yaml = """
+        services:
+          web:
+            image: nginx
+            dns:
+              - 8.8.8.8
+            dns_search:
+              - example.com
+              - local
+            dns_opt:
+              - "ndots:5"
+        """
+        let project = try ComposeParser().parse(yaml: yaml)
+        let web = try XCTUnwrap(project.services["web"])
+        XCTAssertEqual(web.dns, ["8.8.8.8"])
+        XCTAssertEqual(web.dnsSearch, ["example.com", "local"])
+        XCTAssertEqual(web.dnsOpt, ["ndots:5"])
+    }
+
+    func testDnsSearchDefaultsEmpty() throws {
+        let yaml = """
+        services:
+          web:
+            image: nginx
+        """
+        let project = try ComposeParser().parse(yaml: yaml)
+        let web = try XCTUnwrap(project.services["web"])
+        XCTAssertTrue(web.dnsSearch.isEmpty)
+        XCTAssertTrue(web.dnsOpt.isEmpty)
+    }
+
+    // MARK: - Advanced networking: IPAM
+
+    func testNetworkIpamConfig() throws {
+        let yaml = """
+        networks:
+          backend:
+            driver: bridge
+            ipam:
+              driver: default
+              config:
+                - subnet: "172.28.0.0/16"
+                  ip_range: "172.28.5.0/24"
+                  gateway: "172.28.5.254"
+        services:
+          app:
+            image: nginx
+            networks:
+              - backend
+        """
+        let project = try ComposeParser().parse(yaml: yaml)
+        let backend = try XCTUnwrap(project.networks["backend"])
+        XCTAssertEqual(backend.driver, "bridge")
+        let ipam = try XCTUnwrap(backend.ipam)
+        XCTAssertEqual(ipam.driver, "default")
+        XCTAssertEqual(ipam.config.count, 1)
+        XCTAssertEqual(ipam.config[0].subnet, "172.28.0.0/16")
+        XCTAssertEqual(ipam.config[0].ipRange, "172.28.5.0/24")
+        XCTAssertEqual(ipam.config[0].gateway, "172.28.5.254")
+    }
+
+    func testExternalNetworkConfig() throws {
+        let yaml = """
+        networks:
+          shared:
+            external: true
+            name: my-shared-network
+        services:
+          app:
+            image: nginx
+            networks:
+              - default
+        """
+        let project = try ComposeParser().parse(yaml: yaml)
+        let shared = try XCTUnwrap(project.networks["shared"])
+        XCTAssertTrue(shared.external)
+        XCTAssertEqual(shared.name, "my-shared-network")
+    }
+
+    func testRuntimeNetworkNameUsesInternalComposeName() throws {
+        let yaml = """
+        name: netproj
+        networks:
+          backend:
+            ipam:
+              config:
+                - subnet: "172.28.0.0/16"
+        services:
+          app:
+            image: nginx
+            networks:
+              - backend
+        """
+        let project = try ComposeParser().parse(yaml: yaml)
+        XCTAssertEqual(ComposeOrchestrator.runtimeNetworkName(project: project, network: "backend"), "netproj_backend")
+    }
+
+    func testRuntimeNetworkNameUsesExplicitExternalName() throws {
+        let yaml = """
+        networks:
+          shared:
+            external: true
+            name: my-shared-network
+        services:
+          app:
+            image: nginx
+            networks:
+              - shared
+        """
+        let project = try ComposeParser().parse(yaml: yaml)
+        XCTAssertEqual(ComposeOrchestrator.runtimeNetworkName(project: project, network: "shared"), "my-shared-network")
+    }
+
+    func testSecurityOptionsAndPrivilegeParsing() throws {
+        let yaml = """
+        services:
+          web:
+            image: nginx
+            privileged: true
+            cap_add:
+              - SYS_ADMIN
+            security_opt:
+              - seccomp=unconfined
+        """
+        let project = try ComposeParser().parse(yaml: yaml)
+        let web = try XCTUnwrap(project.services["web"])
+        XCTAssertTrue(web.privileged)
+        XCTAssertEqual(web.capAdd, ["SYS_ADMIN"])
+        XCTAssertEqual(web.securityOpt, ["seccomp=unconfined"])
     }
 }
