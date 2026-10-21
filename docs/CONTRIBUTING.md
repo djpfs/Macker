@@ -36,7 +36,7 @@ Requirements:
 - **Full Xcode** — XCTest is not shipped with CommandLineTools, so `make test`
   and the test targets require Xcode.
 - [apple/container](https://github.com/apple/container) installed and running
-  (`container-apiserver`). The XPC protocol is pinned to **1.2.2** in
+  (`container-apiserver`). The XPC protocol is pinned to **1.6.0** in
   `Package.swift` — client and runtime ship in lockstep.
 
 ## Reporting issues

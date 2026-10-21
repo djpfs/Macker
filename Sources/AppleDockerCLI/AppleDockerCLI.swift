@@ -34,7 +34,7 @@ public struct AppleDockerCLICommand: AsyncParsableCommand {
     /// Version of the macker client. The container protocol version is
     /// pinned in Package.swift (`containerVersion`) and must be bumped in
     /// lockstep with the apple/container runtime.
-    public static let clientVersion = "macker 0.1.0 (container protocol 1.2.2)"
+    public static let clientVersion = "macker 0.1.0 (container protocol 1.6.0)"
 
     public init() {}
 

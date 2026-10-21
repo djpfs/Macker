@@ -3,7 +3,7 @@
 ## Limitations
 
 - **Apple Silicon only** — containers run as Linux VMs via Virtualization.framework.
-- **Protocol lockstep** — the XPC protocol is pinned to `apple/container 1.2.2`.
+- **Protocol lockstep** — the XPC protocol is pinned to `apple/container 1.6.0`.
 - **No layer deduplication** — each image is a full snapshot; storage can grow
   quickly (see [GUI features](GUI.md)).
 - **Hot reload** — only ATTRIB events are synthesized.

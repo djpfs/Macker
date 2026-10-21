@@ -233,7 +233,7 @@ The single `macker` binary dispatches on its arguments:
 | **macOS** | 15+ (Sequoia or later) |
 | **CPU** | Apple Silicon (arm64) |
 | **Runtime** | [`apple/container`](https://github.com/apple/container) installed and running (`container-apiserver`) |
-| **XPC protocol** | pinned to **1.2.2** in `Package.swift` — client and runtime ship in lockstep |
+| **XPC protocol** | pinned to **1.6.0** in `Package.swift` — client and runtime ship in lockstep |
 
 ---
 

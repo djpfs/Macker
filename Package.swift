@@ -10,7 +10,7 @@
 import PackageDescription
 
 /// Version of apple/container this client was built and tested against.
-let containerVersion = "1.2.2"
+let containerVersion = "1.6.0"
 
 let package = Package(
     name: "macker",

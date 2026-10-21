@@ -5,7 +5,7 @@
 SWIFT      ?= swift
 BUILD_DIR  ?= .build
 BIN        := $(BUILD_DIR)/debug/macker
-CONTAINER_VERSION := 1.2.2
+CONTAINER_VERSION := 1.6.0
 
 .PHONY: all build test run clean release install guest-agent lint
 
