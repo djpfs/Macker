@@ -3,6 +3,7 @@
 //===----------------------------------------------------------------------===//
 
 import SwiftUI
+import AppKit
 import ServiceManagement
 import ContainerBackend
 
@@ -21,6 +22,11 @@ struct SettingsView: View {
     @State private var confirmFull = false
     @State private var confirmInstall = false
     @State private var confirmInstallApp = false
+    @State private var storageSizes: [(name: String, bytes: UInt64)] = []
+    @State private var storageRedirected = false
+    @State private var storageHasBackup = false
+    @State private var pendingStorageParent: URL?
+    @State private var confirmDeleteBackup = false
     @State private var confirmRuntimeUpgrade = false
 
     var body: some View {
@@ -293,9 +299,122 @@ struct SettingsView: View {
         }
     }
 
+    /// Where the runtime keeps its data, with a move action.
+    private var storageLocation: some View {
+        Section("Location") {
+            HStack {
+                Text("Current")
+                Spacer()
+                Text(StorageLocation.standard.resolvedRoot.path)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            if storageRedirected {
+                Text("This folder is a link to another disk.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(storageSizes, id: \.name) { folder in
+                HStack {
+                    Text(folder.name)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text(Self.formatBytes(folder.bytes))
+                        .foregroundStyle(.secondary)
+                }
+                .font(.caption)
+            }
+            if storageHasBackup {
+                HStack {
+                    Text("The original data is kept as a backup until you delete it.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Delete backup…", role: .destructive) {
+                        confirmDeleteBackup = true
+                    }
+                    .disabled(state.isMovingStorage)
+                }
+            }
+            HStack {
+                Button("Move storage…") {
+                    chooseStorageFolder()
+                }
+                .disabled(state.isMovingStorage)
+                if state.isMovingStorage {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Moving storage. The daemon restarts afterwards.")
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .onAppear(perform: reloadStorageInfo)
+        .onChange(of: state.isMovingStorage) { _, moving in
+            if !moving { reloadStorageInfo() }
+        }
+        .confirmationDialog(
+            "Move the container storage?",
+            isPresented: Binding(
+                get: { pendingStorageParent != nil },
+                set: { if !$0 { pendingStorageParent = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Move storage") {
+                guard let parent = pendingStorageParent else { return }
+                pendingStorageParent = nil
+                Task { @MainActor in
+                    await state.moveStorage(toParent: parent)
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                pendingStorageParent = nil
+            }
+        } message: {
+            Text("Images, containers, volumes and the build cache are copied to \(pendingStorageParent?.path ?? "the chosen folder"). Running containers are stopped during the move. The original stays as a backup until you delete it.")
+        }
+        .confirmationDialog(
+            "Delete the backup?",
+            isPresented: $confirmDeleteBackup,
+            titleVisibility: .visible
+        ) {
+            Button("Delete backup", role: .destructive) {
+                state.deleteStorageBackup()
+                reloadStorageInfo()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Only do this after checking that images and containers work from the new location.")
+        }
+    }
+
+    private func reloadStorageInfo() {
+        let location = StorageLocation.standard
+        storageRedirected = location.isRedirected
+        storageHasBackup = location.backup != nil
+        storageSizes = location.sizes()
+    }
+
+    /// Lets the user pick a parent folder, then asks for confirmation.
+    private func chooseStorageFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Choose"
+        panel.message = "Choose the folder where the container storage should live."
+        if panel.runModal() == .OK, let url = panel.url {
+            pendingStorageParent = url
+        }
+    }
+
     private var storage: some View {
         ScrollView {
             Form {
+            storageLocation
             Section("Disk usage") {
                 HStack {
                     Text("Total")

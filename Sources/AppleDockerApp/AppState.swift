@@ -75,6 +75,8 @@ final class AppState {
     var diskUsage = SystemDiskUsage()
     /// Whether a cleanup operation is in flight (disables the cleanup buttons).
     var isCleaning = false
+    /// Whether the runtime store is being moved.
+    var isMovingStorage = false
     /// Whether a CLI install is in flight.
     var isInstalling = false
     /// Whether an app install into /Applications is in flight.
@@ -687,6 +689,52 @@ final class AppState {
         do {
             try await service.images.prune(all: all)
             await refresh()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Moves the runtime store into `parent`. The daemon is stopped for the copy
+    /// and started again on the new location. If the move fails, the daemon is
+    /// started on the original location; if the start fails after the move, the
+    /// original is restored.
+    func moveStorage(toParent parent: URL) async {
+        guard !isMovingStorage else { return }
+        isMovingStorage = true
+        defer { isMovingStorage = false }
+        let opID = beginOperation("moveStorage", section: .settings)
+        defer { endOperation(opID) }
+
+        let location = StorageLocation.standard
+        do {
+            try await service.daemon.stop()
+            let result: StorageMoveResult
+            do {
+                result = try location.move(toParent: parent)
+            } catch {
+                try? await service.daemon.start()
+                throw error
+            }
+            do {
+                try await service.daemon.start(environment: [StorageLocation.environmentName: result.newRoot.path])
+            } catch {
+                try? location.restoreBackup()
+                try? await service.daemon.start()
+                throw error
+            }
+            reconnect()
+            await refresh()
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Deletes the backup left by `moveStorage`, once the moved store is in use.
+    func deleteStorageBackup() {
+        do {
+            try StorageLocation.standard.deleteBackup()
+            errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
         }
