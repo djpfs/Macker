@@ -20,6 +20,7 @@ struct SettingsView: View {
     @State private var confirmFull = false
     @State private var confirmInstall = false
     @State private var confirmInstallApp = false
+    @State private var confirmRuntimeUpgrade = false
 
     var body: some View {
         TabView {
@@ -141,6 +142,7 @@ struct SettingsView: View {
     private var runtime: some View {
         ScrollView {
             Form {
+            runtimeVersionSection
             Section("Daemon") {
                 HStack {
                     Text("Status")
@@ -191,6 +193,94 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+        }
+    }
+
+    /// Installed vs recommended vs latest apple/container, with a one-click upgrade.
+    private var runtimeVersionSection: some View {
+        let recommended = RuntimeVersion.recommended
+        let installed = state.runtimeInstalled
+        let upgradeNeeded = installed.map { RuntimeVersion.isOlder($0, than: recommended) } ?? true
+        let latestUntested = state.runtimeLatest.map { RuntimeVersion.isOlder(recommended, than: $0) } ?? false
+
+        return Section("Container runtime") {
+            HStack {
+                Text("Installed")
+                Spacer()
+                Text(installed ?? "Not found")
+                    .foregroundStyle(.secondary)
+            }
+            HStack {
+                Text("Recommended")
+                Spacer()
+                Text(recommended)
+                    .foregroundStyle(.secondary)
+            }
+            HStack {
+                Text("Latest")
+                Spacer()
+                if state.isCheckingRuntime {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Text(state.runtimeLatest ?? "Unknown")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            if let runtimeLatestError = state.runtimeLatestError {
+                Text(runtimeLatestError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+            if installed == recommended {
+                Text("Up to date with the version Macker is tested against.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if installed != nil, !upgradeNeeded {
+                Text("Installed version is newer than the one Macker is tested against.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if latestUntested {
+                Text("Latest release is newer than what Macker supports yet. Upgrade stays on \(recommended).")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            HStack {
+                Button("Check for updates") {
+                    Task { @MainActor in await state.checkRuntimeVersions() }
+                }
+                .disabled(state.isCheckingRuntime || state.isUpgradingRuntime)
+                Spacer()
+                if upgradeNeeded {
+                    Button(installed == nil ? "Install \(recommended)" : "Upgrade to \(recommended)") {
+                        confirmRuntimeUpgrade = true
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(state.isUpgradingRuntime)
+                }
+            }
+            if state.isUpgradingRuntime {
+                HStack(spacing: 6) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Updating runtime. The daemon restarts afterwards.")
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .task { await state.checkRuntimeVersions() }
+        .confirmationDialog(
+            installed == nil ? "Install container \(recommended)?" : "Upgrade container to \(recommended)?",
+            isPresented: $confirmRuntimeUpgrade,
+            titleVisibility: .visible
+        ) {
+            Button(installed == nil ? "Install" : "Upgrade") {
+                Task { @MainActor in await state.upgradeRuntime() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Downloads Apple's signed installer for container \(recommended), verifies its SHA-256 checksum, and installs it. The container daemon is stopped during the install and started again afterwards. You will be asked for your administrator password.")
         }
     }
 
