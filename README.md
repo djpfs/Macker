@@ -309,7 +309,7 @@ The GUI provides:
 
 - <img src="https://img.shields.io/badge/-list-17A2B8?style=flat-square&logoColor=white" alt="" /> **Sidebar** — Overview, Resources (with item counts), and System sections.
 - <img src="https://img.shields.io/badge/-stack-17A2B8?style=flat-square&logoColor=white" alt="" /> **Dashboard** — resource cards, daemon status, and CPU/memory/I/O charts with configurable time intervals.
-- <img src="https://img.shields.io/badge/-container-2496ED?style=flat-square&logo=docker&logoColor=white" alt="" /> **Containers** — list with search, a All / Running / Stopped filter, sort, published-port badges, and memory use for running containers. The detail pane has Info / Stats / Logs / Terminal / Files / Settings tabs.
+- <img src="https://img.shields.io/badge/-container-2496ED?style=flat-square&logo=docker&logoColor=white" alt="" /> **Containers** — list with search, All / Running / Stopped filter, sort, published-port badges, and memory use for running containers. The detail pane has Info / Stats / Logs / Terminal / Files / Settings tabs.
 - <img src="https://img.shields.io/badge/-file-6C757D?style=flat-square&logoColor=white" alt="" /> **Images** — list, pull, and delete (with confirmation).
 - <img src="https://img.shields.io/badge/-build-17A2B8?style=flat-square&logoColor=white" alt="" /> **Builds** — build history, build an image from a context, retry failed builds, copy the build command, and prune the build cache.
 - <img src="https://img.shields.io/badge/-storage-6F42C1?style=flat-square&logoColor=white" alt="" /> **Volumes / Networks** — create, inspect, and delete.
