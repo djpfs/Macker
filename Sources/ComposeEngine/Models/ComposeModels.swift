@@ -798,18 +798,23 @@ public struct HealthCheckConfig: Sendable, Codable, Equatable {
 /// The deploy section (only resource limits are honored).
 public struct DeployConfig: Sendable, Codable, Equatable {
     public var resources: DeployResources?
+    /// Number of containers to run for the service (used when `scale:` is not set).
+    public var replicas: Int?
 
-    public init(resources: DeployResources? = nil) {
+    public init(resources: DeployResources? = nil, replicas: Int? = nil) {
         self.resources = resources
+        self.replicas = replicas
     }
 
     enum CodingKeys: String, CodingKey {
         case resources
+        case replicas
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         resources = try c.decodeIfPresent(DeployResources.self, forKey: .resources)
+        replicas = try c.decodeIfPresent(Int.self, forKey: .replicas)
     }
 }
 
