@@ -351,9 +351,8 @@ docker push registry.example.com/team/app:1
 ```
 
 `docker login` reads the password from `--password-stdin` or a hidden prompt.
-`docker build` does not accept `-a`, `-c` or `-m` on `commit`; for build,
-`--cache` tuning is not exposed by the 1.6.0 CLI, so only `--no-cache` and
-`--pull` control caching.
+Build caching is controlled with `--no-cache` and `--pull`. The 1.6.0 CLI has no
+cache-from/cache-to options, so cache import and export are not available yet.
 
 ### <img src="https://img.shields.io/badge/-context-6F42C1?style=flat-square&logoColor=white" alt="" /> Contexts and other daemons
 
