@@ -345,9 +345,13 @@ struct SettingsView: View {
                 if state.isMovingStorage {
                     ProgressView()
                         .controlSize(.small)
-                    Text("Moving storage. The daemon restarts afterwards.")
-                        .foregroundStyle(.secondary)
                 }
+            }
+            if let message = state.storageMessage {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(message.hasPrefix("Move failed") ? .red : .secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .onAppear(perform: reloadStorageInfo)

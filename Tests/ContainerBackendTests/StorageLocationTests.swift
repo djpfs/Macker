@@ -135,12 +135,14 @@ final class StorageLocationTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: store.link.appendingPathComponent("content/blob").path))
     }
 
-    func testSizesListFoldersLargestFirst() throws {
+    func testSizesReportAllocatedSpacePerFolder() throws {
         let store = try makeStore()
 
-        let sizes = store.sizes()
+        let sizes = Dictionary(uniqueKeysWithValues: store.sizes().map { ($0.name, $0.bytes) })
 
-        XCTAssertEqual(sizes.map(\.name), ["content", "snapshots"])
-        XCTAssertEqual(sizes.first?.bytes, 4_000)
+        // Allocated space is at least the logical size, and comes in whole blocks.
+        XCTAssertGreaterThanOrEqual(sizes["content"] ?? 0, 4_000)
+        XCTAssertGreaterThanOrEqual(sizes["snapshots"] ?? 0, 2_000)
+        XCTAssertEqual(Set(sizes.keys), ["content", "snapshots"])
     }
 }

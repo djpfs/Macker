@@ -82,12 +82,13 @@ public struct StorageLocation: Sendable {
         link.resolvingSymlinksInPath()
     }
 
-    /// Size of each top-level folder of the store, sorted by size, largest first.
+    /// Space used by each top-level folder of the store (allocated blocks, so
+    /// sparse disk images count only what they occupy), largest first.
     public func sizes() -> [(name: String, bytes: UInt64)] {
         let fm = FileManager.default
         let entries = (try? fm.contentsOfDirectory(at: resolvedRoot, includingPropertiesForKeys: nil)) ?? []
         return entries
-            .map { (name: $0.lastPathComponent, bytes: Self.directorySize($0)) }
+            .map { (name: $0.lastPathComponent, bytes: Self.allocatedSize($0)) }
             .sorted { $0.bytes > $1.bytes }
     }
 
@@ -193,24 +194,39 @@ public struct StorageLocation: Sendable {
         }
     }
 
-    /// Total size of the files under `url`, in bytes.
+    /// Space occupied on disk by the files under `url`.
+    static func allocatedSize(_ url: URL) -> UInt64 {
+        totalSize(url, keys: [.totalFileAllocatedSizeKey, .isRegularFileKey]) { values in
+            UInt64(values.totalFileAllocatedSize ?? 0)
+        }
+    }
+
+    /// Logical size of the files under `url`, in bytes. Used to check a copy,
+    /// since both sides of the comparison are counted the same way.
     static func directorySize(_ url: URL) -> UInt64 {
+        totalSize(url, keys: [.fileSizeKey, .isRegularFileKey]) { values in
+            UInt64(values.fileSize ?? 0)
+        }
+    }
+
+    private static func totalSize(
+        _ url: URL,
+        keys: Set<URLResourceKey>,
+        bytes: (URLResourceValues) -> UInt64
+    ) -> UInt64 {
         let fm = FileManager.default
         var isDirectory: ObjCBool = false
         guard fm.fileExists(atPath: url.path, isDirectory: &isDirectory) else { return 0 }
         if !isDirectory.boolValue {
-            let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
-            return UInt64(size)
+            return bytes((try? url.resourceValues(forKeys: keys)) ?? URLResourceValues())
         }
-        guard let enumerator = fm.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey]) else {
+        guard let enumerator = fm.enumerator(at: url, includingPropertiesForKeys: Array(keys)) else {
             return 0
         }
         var total: UInt64 = 0
         for case let file as URL in enumerator {
-            let values = try? file.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
-            if values?.isRegularFile == true {
-                total += UInt64(values?.fileSize ?? 0)
-            }
+            guard let values = try? file.resourceValues(forKeys: keys), values.isRegularFile == true else { continue }
+            total += bytes(values)
         }
         return total
     }

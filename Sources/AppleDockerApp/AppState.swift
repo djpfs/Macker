@@ -77,6 +77,8 @@ final class AppState {
     var isCleaning = false
     /// Whether the runtime store is being moved.
     var isMovingStorage = false
+    /// Progress or result of the last storage move, shown in Settings > Storage.
+    var storageMessage: String?
     /// Whether a CLI install is in flight.
     var isInstalling = false
     /// Whether an app install into /Applications is in flight.
@@ -706,8 +708,10 @@ final class AppState {
         defer { endOperation(opID) }
 
         let location = StorageLocation.standard
+        storageMessage = "Stopping the runtime…"
         do {
             try await service.daemon.stop()
+            storageMessage = "Copying the storage to \(parent.path)…"
             let result: StorageMoveResult
             do {
                 result = try location.move(toParent: parent)
@@ -715,6 +719,7 @@ final class AppState {
                 try? await service.daemon.start()
                 throw error
             }
+            storageMessage = "Starting the runtime on the new location…"
             do {
                 try await service.daemon.start(environment: [StorageLocation.environmentName: result.newRoot.path])
             } catch {
@@ -725,7 +730,9 @@ final class AppState {
             reconnect()
             await refresh()
             errorMessage = nil
+            storageMessage = "Storage moved to \(result.newRoot.path). The original is kept as a backup."
         } catch {
+            storageMessage = "Move failed: \(error.localizedDescription)"
             errorMessage = error.localizedDescription
         }
     }
