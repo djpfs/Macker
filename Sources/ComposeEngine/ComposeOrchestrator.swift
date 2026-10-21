@@ -1366,6 +1366,8 @@ public struct ComposeOrchestrator: Sendable {
     /// Poll a container's healthcheck until it passes or the retries are
     /// exhausted.
     private func waitUntilHealthy(containerId: String, healthcheck: HealthCheckConfig) async throws {
+        // A disabled healthcheck has nothing to wait for.
+        guard !healthcheck.isDisabled else { return }
         let interval = Self.parseDuration(healthcheck.interval) ?? 5
         let retries = healthcheck.retries ?? 3
         let startPeriod = Self.parseDuration(healthcheck.startPeriod) ?? 0

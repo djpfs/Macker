@@ -768,13 +768,21 @@ public struct HealthCheckConfig: Sendable, Codable, Equatable {
     public var retries: Int?
     /// Grace period before starting checks.
     public var startPeriod: String?
+    /// `disable: true` turns the service's healthcheck off.
+    public var disable: Bool
 
-    public init(test: [String], interval: String? = nil, timeout: String? = nil, retries: Int? = nil, startPeriod: String? = nil) {
+    public init(test: [String], interval: String? = nil, timeout: String? = nil, retries: Int? = nil, startPeriod: String? = nil, disable: Bool = false) {
         self.test = test
         self.interval = interval
         self.timeout = timeout
         self.retries = retries
         self.startPeriod = startPeriod
+        self.disable = disable
+    }
+
+    /// True when the healthcheck must not run: `disable: true`, or a test of `NONE`.
+    public var isDisabled: Bool {
+        disable || test.first?.uppercased() == "NONE"
     }
 
     enum CodingKeys: String, CodingKey {
@@ -783,6 +791,7 @@ public struct HealthCheckConfig: Sendable, Codable, Equatable {
         case timeout
         case retries
         case startPeriod = "start_period"
+        case disable
     }
 
     public init(from decoder: Decoder) throws {
@@ -792,6 +801,7 @@ public struct HealthCheckConfig: Sendable, Codable, Equatable {
         timeout = try c.decodeIfPresent(String.self, forKey: .timeout)
         retries = try c.decodeIfPresent(Int.self, forKey: .retries)
         startPeriod = try c.decodeIfPresent(String.self, forKey: .startPeriod)
+        disable = try c.decodeIfPresent(Bool.self, forKey: .disable) ?? false
     }
 }
 
