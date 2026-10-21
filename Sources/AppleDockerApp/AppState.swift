@@ -232,13 +232,23 @@ final class AppState {
 
     // MARK: - Internals
 
-    private let service: ContainerService
+    /// `nonisolated(unsafe)` so the nonisolated init can set it; all later
+    /// access happens on the main actor.
+    private nonisolated(unsafe) var service: ContainerService
     private var pollTask: Task<Void, Never>?
 
-    /// Nonisolated because `service` is immutable — lets the `@State` initial
-    /// value in the `App` struct be created from a nonisolated context.
+    /// Nonisolated so the `@State` initial value in the `App` struct can be
+    /// created from a nonisolated context.
     nonisolated init(service: ContainerService = ContainerService()) {
         self.service = service
+    }
+
+    /// Replaces the XPC connection to container-apiserver. The connection is
+    /// never re-established after the daemon stops or restarts (upgrade,
+    /// `system stop/start`), so once stale every poll keeps failing.
+    private func reconnect() {
+        service.close()
+        service = ContainerService()
     }
 
     // MARK: - Polling
@@ -282,6 +292,8 @@ final class AppState {
             isDaemonRunning = true
             errorMessage = nil
         } catch {
+            // Rebuild the connection so the next poll can reach a restarted daemon.
+            reconnect()
             isDaemonRunning = false
             errorMessage = error.localizedDescription
         }
