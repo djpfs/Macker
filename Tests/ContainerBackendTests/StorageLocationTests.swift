@@ -97,6 +97,23 @@ final class StorageLocationTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: parent.appendingPathComponent("com.apple.container").path))
     }
 
+    func testSparseImagesNeedOnlyTheirAllocatedSpace() throws {
+        let store = try makeStore()
+        let parent = try makeDestinationParent()
+        // A sparse 10 GB image that occupies almost nothing on disk.
+        let image = store.link.appendingPathComponent("snapshots/sparse.img")
+        FileManager.default.createFile(atPath: image.path, contents: nil)
+        let handle = try FileHandle(forWritingTo: image)
+        try handle.truncate(atOffset: 10_000_000_000)
+        try handle.close()
+
+        // Only 1 MB free: enough for the allocated bytes, far less than the logical size.
+        let result = try store.move(toParent: parent, availableCapacity: { _ in 1_000_000 })
+
+        XCTAssertTrue(store.isRedirected)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: result.newRoot.appendingPathComponent("snapshots/sparse.img").path))
+    }
+
     func testMissingDestinationIsRefused() throws {
         let store = try makeStore()
         let missing = root.appendingPathComponent("not-mounted", isDirectory: true)

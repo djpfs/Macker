@@ -24,6 +24,10 @@ public enum StorageLocationError: LocalizedError, Equatable {
     case copyFailed(String)
     case sizeMismatch(expected: UInt64, actual: UInt64)
 
+    static func format(_ bytes: UInt64) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
+    }
+
     public var errorDescription: String? {
         switch self {
         case .alreadyRedirected(let target):
@@ -33,7 +37,7 @@ public enum StorageLocationError: LocalizedError, Equatable {
         case .destinationExists(let path):
             "Something already exists at \(path). Choose another folder."
         case .notEnoughSpace(let needed, let available):
-            "Not enough free space at the destination: \(needed) bytes needed, \(available) available."
+            "Not enough free space at the destination: \(Self.format(needed)) needed, \(Self.format(available)) available."
         case .backupExists(let path):
             "A backup already exists at \(path). Delete it before moving the storage again."
         case .copyFailed(let detail):
@@ -103,7 +107,8 @@ public struct StorageLocation: Sendable {
     /// back and the partial copy is removed.
     public func move(
         toParent parent: URL,
-        copy: (URL, URL) throws -> Void = StorageLocation.dittoCopy
+        copy: (URL, URL) throws -> Void = StorageLocation.dittoCopy,
+        availableCapacity: (URL) -> UInt64 = StorageLocation.availableCapacity
     ) throws -> StorageMoveResult {
         let fm = FileManager.default
         if isRedirected {
@@ -123,8 +128,10 @@ public struct StorageLocation: Sendable {
         }
 
         let source = link
-        let needed = Self.directorySize(source)
-        let available = Self.availableCapacity(at: parent)
+        // Sparse disk images copy as sparse files (ditto keeps them sparse), so
+        // the room needed is the allocated size, not the logical one.
+        let needed = Self.allocatedSize(source)
+        let available = availableCapacity(parent)
         // A safety margin: the copy also needs room for metadata.
         let required = needed + needed / 10
         guard available >= required else {
@@ -138,10 +145,12 @@ public struct StorageLocation: Sendable {
             throw StorageLocationError.copyFailed(error.localizedDescription)
         }
 
+        // Compare logical sizes on both sides: the copy preserves them exactly.
+        let expected = Self.directorySize(source)
         let copied = Self.directorySize(destination)
-        guard copied == needed else {
+        guard copied == expected else {
             try? fm.removeItem(at: destination)
-            throw StorageLocationError.sizeMismatch(expected: needed, actual: copied)
+            throw StorageLocationError.sizeMismatch(expected: expected, actual: copied)
         }
 
         do {
@@ -231,7 +240,8 @@ public struct StorageLocation: Sendable {
         return total
     }
 
-    static func availableCapacity(at url: URL) -> UInt64 {
+    /// Free space on the volume that holds `url`, in bytes.
+    public static func availableCapacity(at url: URL) -> UInt64 {
         let values = try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
         return UInt64(values?.volumeAvailableCapacityForImportantUsage ?? 0)
     }
