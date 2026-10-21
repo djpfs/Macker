@@ -100,11 +100,37 @@ private struct RootView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(SidebarItem.allCases, selection: $selection) { item in
-                sidebarRow(item)
-                    .tag(item)
+            List(selection: $selection) {
+                Section("Overview") {
+                    sidebarRow(.dashboard)
+                        .tag(SidebarItem.dashboard)
+                }
+                Section("Resources") {
+                    sidebarRow(.containers)
+                        .badge(state.containers.count)
+                        .tag(SidebarItem.containers)
+                    sidebarRow(.images)
+                        .badge(state.images.count)
+                        .tag(SidebarItem.images)
+                    sidebarRow(.volumes)
+                        .badge(state.volumes.count)
+                        .tag(SidebarItem.volumes)
+                    sidebarRow(.networks)
+                        .badge(state.networks.count)
+                        .tag(SidebarItem.networks)
+                    sidebarRow(.compose)
+                        .tag(SidebarItem.compose)
+                    sidebarRow(.builds)
+                        .tag(SidebarItem.builds)
+                }
+                Section("System") {
+                    sidebarRow(.activity)
+                        .tag(SidebarItem.activity)
+                    sidebarRow(.settings)
+                        .tag(SidebarItem.settings)
+                }
             }
-            .navigationTitle("Macker")            .listStyle(.sidebar)
+            .listStyle(.sidebar)
             .navigationTitle("Macker")
             .navigationSplitViewColumnWidth(min: 240, ideal: 260, max: 360)
             .safeAreaInset(edge: .bottom) {

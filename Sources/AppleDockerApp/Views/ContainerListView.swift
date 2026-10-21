@@ -52,8 +52,8 @@ struct ContainerListView: View {
 
     private var sidebar: some View {
         VStack(spacing: 0) {
-            searchField
-            controls
+            searchRow
+            filterControl
             Divider()
             list
         }
@@ -76,53 +76,53 @@ struct ContainerListView: View {
             }
         }
         .padding(6)
-        .background(Color(nsColor: .textBackgroundColor))
-        .cornerRadius(6)
-        .padding(.horizontal, 8)
-        .padding(.top, 8)
+        .surfaceBackground(cornerRadius: 6)
     }
 
-    /// Filter + sort controls. Fixed height so it never grows when a filter
-    /// (e.g. "Stopped") is selected.
-    private var controls: some View {
+    /// Search and sort on one row, so the sort menu never competes with the
+    /// filter for width.
+    private var searchRow: some View {
         HStack(spacing: 6) {
-            filterControl
+            searchField
             sortControl
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .frame(height: 36)
+        .padding(.horizontal, 10)
+        .padding(.top, 10)
     }
 
+    /// Full-width segmented filter. Uses the native control so its states and
+    /// spacing follow macOS and fit the sidebar at its minimum width.
     private var filterControl: some View {
-        HStack(spacing: 2) {
+        Picker("Filter", selection: $filter) {
             ForEach(ContainerFilter.allCases) { f in
-                Button {
-                    filter = f
-                } label: {
-                    Text(f.rawValue)
-                        .font(.caption.weight(.medium))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 4)
-                        .background(filter == f ? Color.accentColor : Color.clear)
-                        .foregroundStyle(filter == f ? .white : .primary)
-                        .clipShape(RoundedRectangle(cornerRadius: 5))
-                }
-                .buttonStyle(.plain)
+                Text(f.rawValue).tag(f)
             }
         }
-        .frame(height: 24)
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
     }
 
+    /// Icon-only menu next to the search field. The current sort is the
+    /// checked item, and the tooltip names the menu.
     private var sortControl: some View {
-        Picker("Sort", selection: $sort) {
-            ForEach(ContainerSort.allCases) { s in
-                Label(s.rawValue, systemImage: sortIcon(s)).tag(s)
+        Menu {
+            Picker("Sort by", selection: $sort) {
+                ForEach(ContainerSort.allCases) { s in
+                    Label(s.rawValue, systemImage: sortIcon(s)).tag(s)
+                }
             }
+            .pickerStyle(.inline)
+        } label: {
+            Image(systemName: "arrow.up.arrow.down")
+                .foregroundStyle(.secondary)
+                .frame(width: 22, height: 22)
         }
-        .pickerStyle(.menu)
-        .labelsHidden()
-        .controlSize(.small)
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Sort containers")
     }
 
     private var resizer: some View {
@@ -218,19 +218,21 @@ struct ContainerListView: View {
                 // intrinsic size that, inside the sidebar VStack, would expand
                 // and push the layout (the "grows to the middle of the screen"
                 // bug when a filter like Stopped matches nothing).
-                VStack(spacing: 8) {
+                VStack(spacing: 10) {
                     Image(systemName: "shippingbox")
-                        .font(.title2)
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(Color.accentColor)
+                        .frame(width: 44, height: 44)
+                        .background(Color.accentColor.opacity(0.12), in: Circle())
                     Text("No containers")
-                        .font(.callout.weight(.medium))
+                        .font(.callout.weight(.semibold))
                     Text("Run a container with `docker run`, or use `docker compose up`.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(16)
+                .padding(20)
             } else {
                 List(selection: $selection) {
                     ForEach(grouped, id: \.name) { group in
@@ -399,13 +401,23 @@ struct ContainerRow: View {
     let container: ContainerSnapshot
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             StatusDot(status: container.status)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(container.id)
-                    .font(.body.weight(.medium))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(container.id)
+                        .font(.body.weight(.semibold))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    ForEach(Array(container.configuration.publishedPorts.enumerated()), id: \.offset) { _, port in
+                        Text("\(port.hostPort):\(port.containerPort)")
+                            .font(.caption2.monospaced().weight(.medium))
+                            .foregroundStyle(Color.accentColor)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.accentColor.opacity(0.14), in: Capsule())
+                    }
+                }
                 Text(container.configuration.image.reference)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -413,34 +425,53 @@ struct ContainerRow: View {
                     .truncationMode(.middle)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            HStack(spacing: 6) {
+            if let memory = state.stats[container.id]?.memoryUsageBytes, container.status == .running {
+                VStack(alignment: .trailing, spacing: 1) {
+                    Text("MEM")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                    Text(ByteCountFormatter.string(fromByteCount: Int64(memory), countStyle: .memory))
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                .frame(width: 70, alignment: .trailing)
+            }
+            HStack(spacing: 2) {
                 if container.status == .running {
-                    Button {
-                        Task { @MainActor in await state.stopContainer(container.id) }
-                    } label: {
-                        Image(systemName: "stop.fill")
+                    rowAction("stop.fill", help: "Stop") {
+                        await state.stopContainer(container.id)
                     }
-                    .buttonStyle(.borderless)
-                    .help("Stop")
                 } else {
-                    Button {
-                        Task { @MainActor in await state.startContainer(container.id) }
-                    } label: {
-                        Image(systemName: "play.fill")
+                    rowAction("play.fill", help: "Start") {
+                        await state.startContainer(container.id)
                     }
-                    .buttonStyle(.borderless)
-                    .help("Start")
                 }
-                Button {
-                    Task { @MainActor in await state.restartContainer(container.id) }
-                } label: {
-                    Image(systemName: "arrow.clockwise")
+                rowAction("arrow.clockwise", help: "Restart", enabled: container.status == .running) {
+                    await state.restartContainer(container.id)
                 }
-                .buttonStyle(.borderless)
-                .disabled(container.status != .running)
-                .help("Restart")
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 6)
+    }
+
+    /// Small icon button with a fixed hit area, so the row actions line up.
+    private func rowAction(
+        _ symbol: String,
+        help: String,
+        enabled: Bool = true,
+        action: @escaping @MainActor () async -> Void
+    ) -> some View {
+        Button {
+            Task { @MainActor in await action() }
+        } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(enabled ? .secondary : .tertiary)
+                .frame(width: 26, height: 26)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .disabled(!enabled)
+        .help(help)
     }
 }
