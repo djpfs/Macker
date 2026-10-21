@@ -24,9 +24,10 @@ public struct LaunchdManager: Sendable {
     }
 
     /// Start the container services. Idempotent: starting an already-running
-    /// daemon is a no-op.
-    public func start() async throws {
-        let result = try await runner.run(["system", "start"])
+    /// daemon is a no-op. `environment` is passed to `container system start`,
+    /// which records it for the daemon (for example CONTAINER_APP_ROOT).
+    public func start(environment: [String: String] = [:]) async throws {
+        let result = try await runner.run(["system", "start"], environment: environment)
         guard result.succeeded else {
             throw BackendError.operationFailed(
                 "failed to start container services: \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))"

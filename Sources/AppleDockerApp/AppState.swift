@@ -75,6 +75,10 @@ final class AppState {
     var diskUsage = SystemDiskUsage()
     /// Whether a cleanup operation is in flight (disables the cleanup buttons).
     var isCleaning = false
+    /// Whether the runtime store is being moved.
+    var isMovingStorage = false
+    /// Progress or result of the last storage move, shown in Settings > Storage.
+    var storageMessage: String?
     /// Whether a CLI install is in flight.
     var isInstalling = false
     /// Whether an app install into /Applications is in flight.
@@ -687,6 +691,63 @@ final class AppState {
         do {
             try await service.images.prune(all: all)
             await refresh()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Moves the runtime store into `parent`. The daemon is stopped for the copy
+    /// and started again on the new location. If the move fails, the daemon is
+    /// started on the original location; if the start fails after the move, the
+    /// original is restored.
+    func moveStorage(toParent parent: URL) async {
+        guard !isMovingStorage else { return }
+        isMovingStorage = true
+        defer { isMovingStorage = false }
+        let opID = beginOperation("moveStorage", section: .settings)
+        defer { endOperation(opID) }
+
+        let location = StorageLocation.standard
+        storageMessage = "Stopping the runtime…"
+        do {
+            try await service.daemon.stop()
+            storageMessage = "Copying the storage to \(parent.path)…"
+            let result: StorageMoveResult
+            do {
+                // The copy can take minutes; keep it off the main thread so the window stays responsive.
+                result = try await Task.detached(priority: .userInitiated) {
+                    try location.move(toParent: parent)
+                }.value
+            } catch {
+                try? await service.daemon.start()
+                throw error
+            }
+            storageMessage = "Starting the runtime on the new location…"
+            do {
+                try await service.daemon.start(environment: [StorageLocation.environmentName: result.newRoot.path])
+            } catch {
+                // Back to the original: put it back, drop the unused copy, and
+                // start the daemon on the original location.
+                try? location.restoreBackup()
+                try? FileManager.default.removeItem(at: result.newRoot)
+                try? await service.daemon.start()
+                throw error
+            }
+            reconnect()
+            await refresh()
+            errorMessage = nil
+            storageMessage = "Storage moved to \(result.newRoot.path). The original is kept as a backup."
+        } catch {
+            storageMessage = "Move failed: \(error.localizedDescription)"
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Deletes the backup left by `moveStorage`, once the moved store is in use.
+    func deleteStorageBackup() {
+        do {
+            try StorageLocation.standard.deleteBackup()
+            errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
         }
