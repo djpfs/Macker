@@ -83,6 +83,10 @@ public struct DockerTranslator: Sendable {
             try await prune(command)
         case "tag":
             try await tag(command)
+        case "login":
+            try await login(command)
+        case "logout":
+            try await logout(command)
         case "push":
             try await push(command)
         case "load":
@@ -452,19 +456,129 @@ public struct DockerTranslator: Sendable {
     private func build(_ command: DockerCommand) async throws {
         let context = command.arguments.first ?? "."
         var args = ["build", "--progress", "plain"]
-        if let tag = command.value("t") ?? command.value("tag") {
+        if let tag = command.value(short: "t", long: "tag") {
             args += ["-t", tag]
         }
-        if let file = command.value("f") ?? command.value("file") {
+        if let file = command.value(short: "f", long: "file") {
             args += ["-f", file]
+        }
+        if let target = command.value("target") {
+            args += ["--target", target]
+        }
+        if let platform = command.value("platform") {
+            args += ["--platform", platform]
         }
         for arg in command.value("build-arg")?.split(separator: ",") ?? [] {
             args += ["--build-arg", String(arg)]
         }
+        for label in command.value(short: "l", long: "label")?.split(separator: ",") ?? [] {
+            args += ["--label", String(label)]
+        }
+        // A secret spec is `id=key,src=path`, so the value is passed whole.
+        if let secret = command.value("secret") {
+            args += ["--secret", secret]
+        }
+        if let memory = command.value(short: "m", long: "memory") {
+            args += ["--memory", memory]
+        }
+        if let cpus = command.value(short: "c", long: "cpus") {
+            args += ["--cpus", cpus]
+        }
         if command.has("no-cache") { args += ["--no-cache"] }
-        if let platform = command.value("platform") { args += ["--platform", platform] }
+        if command.has("pull") { args += ["--pull"] }
         args.append(context)
         try await runCLI(args)
+    }
+
+    /// Compose files, in order: every `-f`, else `COMPOSE_FILE` (colon-separated),
+    /// else the standard file names in the current directory, plus its override.
+    static func composeFiles(_ command: DockerCommand) -> [String] {
+        let explicit = command.values("f") + command.values("file")
+        if !explicit.isEmpty { return explicit }
+        if let fromEnv = ProcessInfo.processInfo.environment["COMPOSE_FILE"], !fromEnv.isEmpty {
+            return fromEnv.split(separator: ":").map(String.init)
+        }
+        let fm = FileManager.default
+        let base = ["compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"]
+            .first { fm.fileExists(atPath: $0) } ?? "docker-compose.yml"
+        var files = [base]
+        let overrides = ["compose.override.yaml", "compose.override.yml",
+                         "docker-compose.override.yaml", "docker-compose.override.yml"]
+        if let override = overrides.first(where: { fm.fileExists(atPath: $0) }) {
+            files.append(override)
+        }
+        return files
+    }
+
+    /// `--scale SERVICE=N` (repeatable) for `compose up`.
+    static func composeScales(_ command: DockerCommand) throws -> [String: Int] {
+        var scales: [String: Int] = [:]
+        for value in command.values("scale") {
+            let parts = value.split(separator: "=", maxSplits: 1).map(String.init)
+            guard parts.count == 2, let count = Int(parts[1]), count >= 0 else {
+                throw DockerShimError.missingArgument("--scale SERVICE=NUM (got \(value))")
+            }
+            scales[parts[0]] = count
+        }
+        return scales
+    }
+
+    /// Active profiles: every `--profile`, plus `COMPOSE_PROFILES` (comma-separated).
+    static func composeProfiles(_ command: DockerCommand) -> Set<String> {
+        func names(_ value: String) -> [String] {
+            value.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        }
+        var active = Set(command.values("profile").flatMap(names))
+        if let fromEnv = ProcessInfo.processInfo.environment["COMPOSE_PROFILES"] {
+            active.formUnion(names(fromEnv))
+        }
+        return active
+    }
+
+    /// `docker login SERVER -u USER`. The password comes from stdin with
+    /// `--password-stdin`, or from a hidden prompt. It is never passed as an argument.
+    private func login(_ command: DockerCommand) async throws {
+        guard let server = command.arguments.first else {
+            throw DockerShimError.missingArgument("SERVER")
+        }
+        guard let username = command.value(short: "u", long: "username") else {
+            throw DockerShimError.missingArgument("-u USERNAME")
+        }
+        let password: String
+        if command.has("password-stdin") {
+            password = String(decoding: FileHandle.standardInput.readDataToEndOfFile(), as: UTF8.self)
+                .trimmingCharacters(in: .newlines)
+        } else {
+            password = Self.promptHidden("Password: ")
+        }
+        try await service.images.login(
+            registry: server, username: username, password: password, scheme: command.value("scheme")
+        )
+        print("Login Succeeded")
+    }
+
+    /// `docker logout SERVER`.
+    private func logout(_ command: DockerCommand) async throws {
+        guard let server = command.arguments.first else {
+            throw DockerShimError.missingArgument("SERVER")
+        }
+        try await service.images.logout(registry: server)
+        print("Removing login credentials for \(server)")
+    }
+
+    /// Reads a line with terminal echo turned off.
+    private static func promptHidden(_ prompt: String) -> String {
+        FileHandle.standardError.write(Data(prompt.utf8))
+        var original = termios()
+        tcgetattr(STDIN_FILENO, &original)
+        var quiet = original
+        quiet.c_lflag &= ~UInt(ECHO)
+        tcsetattr(STDIN_FILENO, TCSANOW, &quiet)
+        defer {
+            tcsetattr(STDIN_FILENO, TCSANOW, &original)
+            FileHandle.standardError.write(Data("\n".utf8))
+        }
+        return readLine(strippingNewline: true) ?? ""
     }
 
     /// `docker prune` — remove all stopped containers.
@@ -1126,15 +1240,20 @@ public struct DockerTranslator: Sendable {
 
         // `docker compose -f file.yml up -d` — the file may come from `-f`
         // (or `--file`) or default to `./docker-compose.yml`.
-        let file = command.value("f") ?? command.value("file") ?? "docker-compose.yml"
+        let files = Self.composeFiles(command)
         let parser = ComposeParser()
-        let project = try parser.parse(fileAt: file)
+        let project = try parser.parse(files: files, profiles: Self.composeProfiles(command))
         let orchestrator = ComposeOrchestrator(service: service)
 
         switch command.subSubcommand {
         case "up":
             let detached = command.has("d") || command.has("detach")
-            try await orchestrator.up(project: project, filePath: file, detached: detached)
+            try await orchestrator.up(
+                project: project,
+                filePath: files[0],
+                detached: detached,
+                scales: try Self.composeScales(command)
+            )
             if detached {
                 for name in try ServiceResolver.resolve(project) {
                     let containerName = ComposeOrchestrator.containerName(
@@ -1150,10 +1269,12 @@ public struct DockerTranslator: Sendable {
             try await orchestrator.down(project: project, removeVolumes: removeVolumes)
         case "ps":
             let containers = try await orchestrator.ps(project: project)
+            let health = await orchestrator.healthStatus(project: project)
             print("NAME   SERVICE   STATUS")
             for container in containers {
                 let serviceName = container.configuration.labels[ComposeOrchestrator.ComposeLabel.service] ?? "-"
-                print("\(container.id)   \(serviceName)   \(container.status.rawValue)")
+                let state = health[container.id].map { "\(container.status.rawValue) (\($0))" } ?? container.status.rawValue
+                print("\(container.id)   \(serviceName)   \(state)")
             }
         case "logs":
             let follow = command.has("f") || command.has("follow")
@@ -1174,9 +1295,9 @@ public struct DockerTranslator: Sendable {
             let data = try encoder.encode(project)
             print(String(decoding: data, as: UTF8.self))
         case "build":
-            try await orchestrator.build(project: project, filePath: file)
+            try await orchestrator.build(project: project, filePath: files[0])
         case "create":
-            try await orchestrator.create(project: project, filePath: file)
+            try await orchestrator.create(project: project, filePath: files[0])
         case "exec":
             guard let serviceName = command.arguments.first else {
                 throw DockerShimError.missingArgument("SERVICE COMMAND")
@@ -1226,7 +1347,7 @@ public struct DockerTranslator: Sendable {
                 project: project,
                 serviceName: serviceName,
                 command: runArgs,
-                filePath: file
+                filePath: files[0]
             )
             if exitCode != 0 {
                 throw ExitCode(exitCode)

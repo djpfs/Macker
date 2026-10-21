@@ -23,19 +23,28 @@ public struct DockerCommand: Sendable, Equatable {
     public let flags: [String: String]
     /// Flags that were present without a value (booleans).
     public let booleanFlags: Set<String>
+    /// Every value a flag was given, in order. `flags` keeps only the last one.
+    public let flagValues: [String: [String]]
 
     public init(
         subcommand: String,
         subSubcommand: String? = nil,
         arguments: [String] = [],
         flags: [String: String] = [:],
-        booleanFlags: Set<String> = []
+        booleanFlags: Set<String> = [],
+        flagValues: [String: [String]] = [:]
     ) {
         self.subcommand = subcommand
         self.subSubcommand = subSubcommand
         self.arguments = arguments
         self.flags = flags
         self.booleanFlags = booleanFlags
+        self.flagValues = flagValues.isEmpty ? flags.mapValues { [$0] } : flagValues
+    }
+
+    /// All values of a repeatable flag such as `-f a.yml -f b.yml`, in order.
+    public func values(_ flag: String) -> [String] {
+        flagValues[flag] ?? []
     }
 
     /// Whether a boolean flag was present.
@@ -94,6 +103,9 @@ public enum DockerCommandParser {
         "secret": ["label", "l", "driver", "template-driver"],
         "start": ["attach", "a", "detach-keys"],
         "restart": ["time", "t"],
+        "build": ["t", "tag", "f", "file", "target", "platform", "build-arg", "label", "l", "secret", "memory", "m", "cpus", "c", "progress", "output", "o", "arch", "a", "os", "ssh", "dns", "dns-search", "dns-option", "dns-domain"],
+        "login": ["username", "u", "scheme"],
+        "logout": [],
         "version": ["format", "f"],
         "info": ["format", "f"],
     ]
@@ -116,6 +128,9 @@ public enum DockerCommandParser {
         "scan": ["help", "h"],
         "secret": ["help", "h"],
         "start": ["help", "h"],
+        "build": ["no-cache", "pull", "q", "quiet", "help", "h"],
+        "login": ["password-stdin", "help", "h"],
+        "logout": ["help", "h"],
         "restart": ["help", "h"],
         "version": ["help", "h"],
         "info": ["help", "h"],
@@ -128,7 +143,12 @@ public enum DockerCommandParser {
         var subSubcommand: String?
         var positionals: [String] = []
         var flags: [String: String] = [:]
+        var flagValues: [String: [String]] = [:]
         var booleanFlags: Set<String> = []
+        func setFlag(_ name: String, _ value: String) {
+            flags[name] = value
+            flagValues[name, default: []].append(value)
+        }
 
         // Docker allows global flags before the subcommand (e.g. `docker -H tcp://... ps`).
         // We skip known global flags and treat the first non-flag token as the subcommand.
@@ -159,10 +179,10 @@ public enum DockerCommandParser {
                 let (name, inlineValue) = splitFlag(token)
                 tokens.removeFirst()
                 if let inlineValue {
-                    flags[name] = inlineValue
+                    setFlag(name, inlineValue)
                 } else if !isBooleanGlobalFlag(name) {
                     if let next = tokens.first {
-                        flags[name] = next
+                        setFlag(name, next)
                         tokens.removeFirst()
                     } else {
                         booleanFlags.insert(name)
@@ -207,11 +227,11 @@ public enum DockerCommandParser {
             if token.hasPrefix("-") {
                 let (name, inlineValue) = splitFlag(token)
                 if let inlineValue {
-                    flags[name] = inlineValue
+                    setFlag(name, inlineValue)
                 } else if valueSet.contains(name) {
                     // Value-taking flag: consume the next token as its value.
                     if let next = tokens.first {
-                        flags[name] = next
+                        setFlag(name, next)
                         tokens.removeFirst()
                     } else {
                         booleanFlags.insert(name)
@@ -221,7 +241,7 @@ public enum DockerCommandParser {
                 } else {
                     // Unknown flag: default to value-taking (docker convention).
                     if let next = tokens.first, !next.hasPrefix("-") {
-                        flags[name] = next
+                        setFlag(name, next)
                         tokens.removeFirst()
                     } else {
                         booleanFlags.insert(name)
@@ -237,7 +257,8 @@ public enum DockerCommandParser {
             subSubcommand: subSubcommand,
             arguments: positionals,
             flags: flags,
-            booleanFlags: booleanFlags
+            booleanFlags: booleanFlags,
+            flagValues: flagValues
         )
     }
 

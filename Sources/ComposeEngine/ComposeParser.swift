@@ -24,6 +24,7 @@ public enum ComposeParseError: Error, LocalizedError, Equatable {
     case unknownVolume(String, String)
     case unknownSecret(String, String)
     case unknownConfig(String, String)
+    case configWithoutFile(String, String)
     case circularDependency([String])
     case interpolationError(String, String)
 
@@ -45,6 +46,8 @@ public enum ComposeParseError: Error, LocalizedError, Equatable {
             return "compose: service '\(service)' references undefined secret '\(secret)'"
         case .unknownConfig(let service, let config):
             return "compose: service '\(service)' references undefined config '\(config)'"
+        case .configWithoutFile(let service, let name):
+            return "compose: service '\(service)' uses '\(name)', which has no file: (only file-backed configs and secrets are supported)"
         case .circularDependency(let chain):
             return "compose: circular dependency: \(chain.joined(separator: " -> "))"
         case .interpolationError(let variable, let message):
@@ -60,15 +63,59 @@ public struct ComposeParser: Sendable {
     /// Parse a compose file at `path`, resolving relative paths against the
     /// file's directory and loading a sibling `.env` file for interpolation.
     public func parse(fileAt path: String) throws -> ComposeProject {
-        let url = URL(fileURLWithPath: path)
-        let yaml: String
-        do {
-            yaml = try String(contentsOf: url, encoding: .utf8)
-        } catch {
-            throw ComposeParseError.unreadableFile(path)
+        try parse(files: [path])
+    }
+
+    /// Parse one or more compose files as a single project, merged in order
+    /// like `docker compose -f base.yml -f override.yml`. The first file's
+    /// directory is the base for relative paths and for the `.env` file.
+    public func parse(files paths: [String], profiles: Set<String>? = nil) throws -> ComposeProject {
+        guard let first = paths.first else {
+            throw ComposeParseError.unreadableFile("(no compose file given)")
         }
-        let env = try loadEnvFile(in: url.deletingLastPathComponent())
-        return try parse(yaml: yaml, env: env, baseDirectory: url.deletingLastPathComponent().path)
+        let baseDirectory = URL(fileURLWithPath: first).deletingLastPathComponent()
+        var merged: Any = [String: Any]()
+        for path in paths {
+            let yaml: String
+            do {
+                yaml = try String(contentsOf: URL(fileURLWithPath: path), encoding: .utf8)
+            } catch {
+                throw ComposeParseError.unreadableFile(path)
+            }
+            do {
+                merged = Self.merge(merged, try Yams.load(yaml: yaml) ?? [:])
+            } catch {
+                throw ComposeParseError.invalidYAML(error.localizedDescription)
+            }
+        }
+        let env = try loadEnvFile(in: baseDirectory)
+        return try parse(tree: merged, env: env, baseDirectory: baseDirectory.path, profiles: profiles)
+    }
+
+    /// Deep-merges compose trees. Maps merge key by key, `command` and
+    /// `entrypoint` are replaced, and other lists accumulate without repeats.
+    static func merge(_ base: Any, _ override: Any) -> Any {
+        if let base = base as? [String: Any], let override = override as? [String: Any] {
+            var result = base
+            for (key, value) in override {
+                if key == "command" || key == "entrypoint" {
+                    result[key] = value
+                } else if let existing = result[key] {
+                    result[key] = merge(existing, value)
+                } else {
+                    result[key] = value
+                }
+            }
+            return result
+        }
+        if let base = base as? [Any], let override = override as? [Any] {
+            var result = base
+            for item in override where !result.contains(where: { "\($0)" == "\(item)" }) {
+                result.append(item)
+            }
+            return result
+        }
+        return override
     }
 
     /// Parse a compose YAML string. `env` supplies interpolation variables
@@ -80,7 +127,11 @@ public struct ComposeParser: Sendable {
         } catch {
             throw ComposeParseError.invalidYAML(error.localizedDescription)
         }
+        return try parse(tree: tree, env: env, baseDirectory: baseDirectory, profiles: profiles)
+    }
 
+    /// Parse an already-loaded compose tree (one file, or several merged).
+    func parse(tree: Any, env: [String: String], baseDirectory: String, profiles: Set<String>?) throws -> ComposeProject {
         // Shell environment wins over the .env file, matching docker compose.
         var variables = env
         for (key, value) in ProcessInfo.processInfo.environment {
@@ -131,11 +182,11 @@ public struct ComposeParser: Sendable {
             for volume in namedVolumes(in: service.volumes) where project.volumes[volume] == nil {
                 throw ComposeParseError.unknownVolume(name, volume)
             }
-            for secret in service.secrets where project.secrets[secret] == nil {
-                throw ComposeParseError.unknownSecret(name, secret)
+            for secret in service.secrets where project.secrets[secret.source] == nil {
+                throw ComposeParseError.unknownSecret(name, secret.source)
             }
-            for config in service.configs where project.configs[config] == nil {
-                throw ComposeParseError.unknownConfig(name, config)
+            for config in service.configs where project.configs[config.source] == nil {
+                throw ComposeParseError.unknownConfig(name, config.source)
             }
         }
         _ = try ServiceResolver.resolve(project)

@@ -139,3 +139,44 @@ final class DockerShimTests: XCTestCase {
         }
     }
 }
+
+final class ComposeScaleFlagTests: XCTestCase {
+    func testScaleFlagsParseIntoCounts() throws {
+        let cmd = try DockerCommandParser.parse(["compose", "up", "-d", "--scale", "web=3", "--scale", "worker=0"])
+        XCTAssertEqual(try DockerTranslator.composeScales(cmd), ["web": 3, "worker": 0])
+    }
+
+    func testScaleFlagRejectsBadValue() throws {
+        let cmd = try DockerCommandParser.parse(["compose", "up", "--scale", "web"])
+        XCTAssertThrowsError(try DockerTranslator.composeScales(cmd))
+    }
+}
+
+final class RegistryAndBuildParsingTests: XCTestCase {
+    func testBuildTagAndTargetAreValues() throws {
+        let cmd = try DockerCommandParser.parse(["build", "-t", "app:1", "--target", "prod", "."])
+        XCTAssertEqual(cmd.value(short: "t", long: "tag"), "app:1")
+        XCTAssertEqual(cmd.value("target"), "prod")
+        XCTAssertEqual(cmd.arguments, ["."])
+    }
+
+    func testBuildSecretKeepsCommas() throws {
+        let cmd = try DockerCommandParser.parse(["build", "--secret", "id=token,src=/tmp/t", "."])
+        XCTAssertEqual(cmd.value("secret"), "id=token,src=/tmp/t")
+        XCTAssertEqual(cmd.arguments, ["."])
+    }
+
+    func testBuildNoCacheIsBoolean() throws {
+        let cmd = try DockerCommandParser.parse(["build", "--no-cache", "-f", "Dockerfile.dev", "ctx"])
+        XCTAssertTrue(cmd.has("no-cache"))
+        XCTAssertEqual(cmd.value(short: "f", long: "file"), "Dockerfile.dev")
+        XCTAssertEqual(cmd.arguments, ["ctx"])
+    }
+
+    func testLoginUsernameAndPasswordStdin() throws {
+        let cmd = try DockerCommandParser.parse(["login", "-u", "ana", "--password-stdin", "ghcr.io"])
+        XCTAssertEqual(cmd.value(short: "u", long: "username"), "ana")
+        XCTAssertTrue(cmd.has("password-stdin"))
+        XCTAssertEqual(cmd.arguments, ["ghcr.io"])
+    }
+}

@@ -81,10 +81,10 @@ public struct ServiceConfig: Sendable, Codable, Equatable {
     public var expose: [String]
     /// Volume mounts, e.g. `"./html:/usr/share/nginx/html:ro"`.
     public var volumes: [String]
-    /// Named secrets referenced by this service.
-    public var secrets: [String]
-    /// Named configs referenced by this service.
-    public var configs: [String]
+    /// Secrets this service uses (short form is a name, long form adds target and mode).
+    public var secrets: [ServiceFileRef]
+    /// Configs this service uses (short form is a name, long form adds target and mode).
+    public var configs: [ServiceFileRef]
     /// Networks this service joins.
     public var networks: [String]
     /// Services this service depends on, with their conditions.
@@ -152,8 +152,8 @@ public struct ServiceConfig: Sendable, Codable, Equatable {
         ports: [String] = [],
         expose: [String] = [],
         volumes: [String] = [],
-        secrets: [String] = [],
-        configs: [String] = [],
+        secrets: [ServiceFileRef] = [],
+        configs: [ServiceFileRef] = [],
         networks: [String] = [],
         dependsOn: [String: DependsOnCondition] = [:],
         healthcheck: HealthCheckConfig? = nil,
@@ -277,8 +277,8 @@ public struct ServiceConfig: Sendable, Codable, Equatable {
         ports = try c.decodeIfPresent(PortList.self, forKey: .ports)?.values ?? []
         expose = try c.decodeIfPresent([String].self, forKey: .expose) ?? []
         volumes = try c.decodeIfPresent([String].self, forKey: .volumes) ?? []
-        secrets = try c.decodeIfPresent(StringOrList.self, forKey: .secrets)?.values ?? []
-        configs = try c.decodeIfPresent(StringOrList.self, forKey: .configs)?.values ?? []
+        secrets = try c.decodeIfPresent([ServiceFileRef].self, forKey: .secrets) ?? []
+        configs = try c.decodeIfPresent([ServiceFileRef].self, forKey: .configs) ?? []
         networks = try c.decodeIfPresent(NetworkList.self, forKey: .networks)?.names ?? []
         dependsOn = try c.decodeIfPresent(DependsOnMap.self, forKey: .dependsOn)?.conditions ?? [:]
         healthcheck = try c.decodeIfPresent(HealthCheckConfig.self, forKey: .healthcheck)
@@ -661,17 +661,21 @@ public struct VolumeConfig: Sendable, Codable, Equatable {
 /// A config definition.
 public struct ConfigConfig: Sendable, Codable, Equatable {
     public var file: String?
+    /// Inline content, written to a file by Macker before it is mounted.
+    public var content: String?
     public var external: Bool
     public var name: String?
 
-    public init(file: String? = nil, external: Bool = false, name: String? = nil) {
+    public init(file: String? = nil, content: String? = nil, external: Bool = false, name: String? = nil) {
         self.file = file
+        self.content = content
         self.external = external
         self.name = name
     }
 
     enum CodingKeys: String, CodingKey {
         case file
+        case content
         case external
         case name
     }
@@ -679,6 +683,7 @@ public struct ConfigConfig: Sendable, Codable, Equatable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         file = try c.decodeIfPresent(String.self, forKey: .file)
+        content = try c.decodeIfPresent(String.self, forKey: .content)
         if let externalBool = try? c.decodeIfPresent(Bool.self, forKey: .external) {
             external = externalBool
         } else {
@@ -691,17 +696,21 @@ public struct ConfigConfig: Sendable, Codable, Equatable {
 /// A secret definition.
 public struct SecretConfig: Sendable, Codable, Equatable {
     public var file: String?
+    /// Inline content, written to a file by Macker before it is mounted.
+    public var content: String?
     public var external: Bool
     public var name: String?
 
-    public init(file: String? = nil, external: Bool = false, name: String? = nil) {
+    public init(file: String? = nil, content: String? = nil, external: Bool = false, name: String? = nil) {
         self.file = file
+        self.content = content
         self.external = external
         self.name = name
     }
 
     enum CodingKeys: String, CodingKey {
         case file
+        case content
         case external
         case name
     }
@@ -709,6 +718,7 @@ public struct SecretConfig: Sendable, Codable, Equatable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         file = try c.decodeIfPresent(String.self, forKey: .file)
+        content = try c.decodeIfPresent(String.self, forKey: .content)
         if let externalBool = try? c.decodeIfPresent(Bool.self, forKey: .external) {
             external = externalBool
         } else {
@@ -768,13 +778,21 @@ public struct HealthCheckConfig: Sendable, Codable, Equatable {
     public var retries: Int?
     /// Grace period before starting checks.
     public var startPeriod: String?
+    /// `disable: true` turns the service's healthcheck off.
+    public var disable: Bool
 
-    public init(test: [String], interval: String? = nil, timeout: String? = nil, retries: Int? = nil, startPeriod: String? = nil) {
+    public init(test: [String], interval: String? = nil, timeout: String? = nil, retries: Int? = nil, startPeriod: String? = nil, disable: Bool = false) {
         self.test = test
         self.interval = interval
         self.timeout = timeout
         self.retries = retries
         self.startPeriod = startPeriod
+        self.disable = disable
+    }
+
+    /// True when the healthcheck must not run: `disable: true`, or a test of `NONE`.
+    public var isDisabled: Bool {
+        disable || test.first?.uppercased() == "NONE"
     }
 
     enum CodingKeys: String, CodingKey {
@@ -783,6 +801,7 @@ public struct HealthCheckConfig: Sendable, Codable, Equatable {
         case timeout
         case retries
         case startPeriod = "start_period"
+        case disable
     }
 
     public init(from decoder: Decoder) throws {
@@ -792,24 +811,30 @@ public struct HealthCheckConfig: Sendable, Codable, Equatable {
         timeout = try c.decodeIfPresent(String.self, forKey: .timeout)
         retries = try c.decodeIfPresent(Int.self, forKey: .retries)
         startPeriod = try c.decodeIfPresent(String.self, forKey: .startPeriod)
+        disable = try c.decodeIfPresent(Bool.self, forKey: .disable) ?? false
     }
 }
 
 /// The deploy section (only resource limits are honored).
 public struct DeployConfig: Sendable, Codable, Equatable {
     public var resources: DeployResources?
+    /// Number of containers to run for the service (used when `scale:` is not set).
+    public var replicas: Int?
 
-    public init(resources: DeployResources? = nil) {
+    public init(resources: DeployResources? = nil, replicas: Int? = nil) {
         self.resources = resources
+        self.replicas = replicas
     }
 
     enum CodingKeys: String, CodingKey {
         case resources
+        case replicas
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         resources = try c.decodeIfPresent(DeployResources.self, forKey: .resources)
+        replicas = try c.decodeIfPresent(Int.self, forKey: .replicas)
     }
 }
 
@@ -848,5 +873,43 @@ public struct ResourceLimits: Sendable, Codable, Equatable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         cpus = try c.decodeIfPresent(String.self, forKey: .cpus)
         memory = try c.decodeIfPresent(String.self, forKey: .memory)
+    }
+}
+
+/// A config or secret used by a service. Short form is just the name; the long
+/// form also sets where it appears in the container and its file mode.
+public struct ServiceFileRef: Sendable, Codable, Equatable {
+    public var source: String
+    public var target: String?
+    public var mode: String?
+
+    public init(source: String, target: String? = nil, mode: String? = nil) {
+        self.source = source
+        self.target = target
+        self.mode = mode
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case source, target, mode
+    }
+
+    public init(from decoder: Decoder) throws {
+        if let name = try? decoder.singleValueContainer().decode(String.self) {
+            source = name
+            target = nil
+            mode = nil
+            return
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        source = try c.decode(String.self, forKey: .source)
+        target = try c.decodeIfPresent(String.self, forKey: .target)
+        // YAML reads an unquoted 0440 as an octal number, so convert it back.
+        if let text = try? c.decodeIfPresent(String.self, forKey: .mode) {
+            mode = text
+        } else if let octal = try? c.decodeIfPresent(Int.self, forKey: .mode) {
+            mode = "0" + String(octal, radix: 8)
+        } else {
+            mode = nil
+        }
     }
 }

@@ -234,6 +234,7 @@ The single `macker` binary dispatches on its arguments:
 | **CPU** | Apple Silicon (arm64) |
 | **Runtime** | [`apple/container`](https://github.com/apple/container) installed and running (`container-apiserver`) |
 | **XPC protocol** | pinned to **1.6.0** in `Package.swift` — client and runtime ship in lockstep |
+| **Runtime upgrade** | Settings → Runtime shows the installed, recommended and latest `container` versions. The upgrade installs the recommended release after checking its SHA-256 |
 
 ---
 
@@ -306,14 +307,15 @@ macker
 
 The GUI provides:
 
+- <img src="https://img.shields.io/badge/-list-17A2B8?style=flat-square&logoColor=white" alt="" /> **Sidebar** — Overview, Resources (with item counts), and System sections.
 - <img src="https://img.shields.io/badge/-stack-17A2B8?style=flat-square&logoColor=white" alt="" /> **Dashboard** — resource cards, daemon status, and CPU/memory/I/O charts with configurable time intervals.
-- <img src="https://img.shields.io/badge/-container-2496ED?style=flat-square&logo=docker&logoColor=white" alt="" /> **Containers** — list with search, start/stop/restart, and a detail pane with Info / Stats / Logs / Terminal / Files / Settings tabs.
+- <img src="https://img.shields.io/badge/-container-2496ED?style=flat-square&logo=docker&logoColor=white" alt="" /> **Containers** — list with search, All / Running / Stopped filter, sort, published-port badges, and memory use for running containers. The detail pane has Info / Stats / Logs / Terminal / Files / Settings tabs.
 - <img src="https://img.shields.io/badge/-file-6C757D?style=flat-square&logoColor=white" alt="" /> **Images** — list, pull, and delete (with confirmation).
 - <img src="https://img.shields.io/badge/-build-17A2B8?style=flat-square&logoColor=white" alt="" /> **Builds** — build history, build an image from a context, retry failed builds, copy the build command, and prune the build cache.
 - <img src="https://img.shields.io/badge/-storage-6F42C1?style=flat-square&logoColor=white" alt="" /> **Volumes / Networks** — create, inspect, and delete.
 - <img src="https://img.shields.io/badge/-compose-FF6B35?style=flat-square&logoColor=white" alt="" /> **Compose** — load compose files (including drag & drop), up/down, logs, and per-project actions.
 - <img src="https://img.shields.io/badge/-monitor-8E44AD?style=flat-square&logoColor=white" alt="" /> **Activity Monitor** — per-container resource usage.
-- <img src="https://img.shields.io/badge/-settings-6C757D?style=flat-square&logoColor=white" alt="" /> **Settings** — menu bar customization, storage cleanup, install CLI/app, launch at login, and more.
+- <img src="https://img.shields.io/badge/-settings-6C757D?style=flat-square&logoColor=white" alt="" /> **Settings** — appearance (System / Light / Dark), the container runtime section (installed, recommended and latest versions, with a one-click upgrade to the tested release), menu bar customization, storage cleanup, install CLI/app, launch at login, and more.
 
 ### <img src="https://img.shields.io/badge/-terminal-000000?style=flat-square&logo=gnubash&logoColor=white" alt="" /> CLI
 
@@ -324,6 +326,16 @@ docker system status
 docker ps
 docker compose up -d
 ```
+
+Some commands with the 1.6.0 runtime:
+
+```bash
+docker commit web myimage:1                        # container commit (needs REPOSITORY[:TAG])
+docker run -d --network-alias api nginx            # DNS alias on the default network
+docker network connect --alias api mynet web       # DNS alias on an existing network
+```
+
+`docker commit` does not support `-a`, `-c` or `-m`; they are refused with an error.
 
 ### <img src="https://img.shields.io/badge/-sync-28A745?style=flat-square&logoColor=white" alt="" /> Docker compatibility
 
@@ -389,8 +401,9 @@ make clean          # remove build artifacts
 
 Tests run in CI on macOS with full Xcode (XCTest is not shipped with
 CommandLineTools). The XPC protocol is not a stable public API — client and
-`container-apiserver` ship in lockstep; bump `containerVersion` in
-`Package.swift` when updating the runtime.
+`container-apiserver` ship in lockstep. When updating the runtime, bump both
+`containerVersion` in `Package.swift` and `RuntimeVersion.recommended` in
+`Sources/ContainerBackend/RuntimeVersion.swift`.
 
 <img src="https://img.shields.io/badge/-book-6F42C1?style=flat-square&logoColor=white" alt="" /> Full guide — see [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
 
