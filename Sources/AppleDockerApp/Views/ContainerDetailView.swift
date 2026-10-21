@@ -237,7 +237,7 @@ private struct LogsView: View {
                 }
                 .padding(8)
             }
-            .background(Color(nsColor: .textBackgroundColor))
+            .contentBackground()
             .onChange(of: lines.count) {
                 if follow, let last = lines.indices.last {
                     proxy.scrollTo(last, anchor: .bottom)
