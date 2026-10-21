@@ -91,6 +91,8 @@ public enum DockerCommandParser {
         "volume": ["driver", "d", "label", "l", "opt", "o", "name", "n", "type", "device", "volume-driver", "volume-opt"],
         "system": ["filter", "f", "format"],
         "inspect": ["format", "f", "size", "s", "type", "t"],
+        "scan": ["severity", "format"],
+        "secret": ["label", "l", "driver", "template-driver"],
         "start": ["attach", "a", "detach-keys"],
         "restart": ["time", "t"],
         "version": ["format", "f"],
@@ -112,6 +114,8 @@ public enum DockerCommandParser {
         "volume": ["help", "h"],
         "system": ["help", "h", "a", "all", "v", "volumes", "i", "images", "c", "containers", "b", "build-cache", "builder"],
         "inspect": ["help", "h"],
+        "scan": ["help", "h"],
+        "secret": ["help", "h"],
         "start": ["help", "h"],
         "restart": ["help", "h"],
         "version": ["help", "h"],
@@ -195,6 +199,11 @@ public enum DockerCommandParser {
                 // Everything after `--` is positional.
                 positionals.append(contentsOf: tokens)
                 break
+            }
+            if token == "-" {
+                // A bare `-` means stdin; treat it as a positional argument.
+                positionals.append(token)
+                continue
             }
             if token.hasPrefix("-") {
                 let (name, inlineValue) = splitFlag(token)
