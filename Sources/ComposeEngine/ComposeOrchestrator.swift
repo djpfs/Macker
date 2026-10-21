@@ -756,6 +756,17 @@ public struct ComposeOrchestrator: Sendable {
         // (a bare name makes bootstrap fail with EOPNOTSUPP).
         mounts = try await resolveVolumeSources(mounts)
 
+        // Configs (under /) and secrets (under /run/secrets) with a file: source,
+        // mounted read-only at their target.
+        mounts += try Self.fileRefMounts(
+            service.configs, files: project.configs.compactMapValues(\.file), defaultDirectory: "",
+            serviceName: serviceName, project: project, filePath: filePath
+        )
+        mounts += try Self.fileRefMounts(
+            service.secrets, files: project.secrets.compactMapValues(\.file), defaultDirectory: "/run/secrets",
+            serviceName: serviceName, project: project, filePath: filePath
+        )
+
         // Published ports.
         var publishedPorts: [PublishPort] = []
         for spec in service.ports {
@@ -916,6 +927,31 @@ public struct ComposeOrchestrator: Sendable {
             )
             _ = try await service.createNetwork(configuration: configuration)
         }
+    }
+
+    /// Read-only bind mounts for configs or secrets. The target is the reference's
+    /// `target:`, else `<defaultDirectory>/<name>`. A reference without a file is an error.
+    static func fileRefMounts(
+        _ refs: [ServiceFileRef],
+        files: [String: String],
+        defaultDirectory: String,
+        serviceName: String,
+        project: ComposeProject,
+        filePath: String
+    ) throws -> [Filesystem] {
+        var mounts: [Filesystem] = []
+        let baseDirectory = URL(fileURLWithPath: filePath).deletingLastPathComponent()
+        for ref in refs {
+            guard let file = files[ref.source] else {
+                throw ComposeParseError.configWithoutFile(serviceName, ref.source)
+            }
+            let host = file.hasPrefix("/") ? file : baseDirectory.appendingPathComponent(file).path
+            let target = ref.target ?? "\(defaultDirectory)/\(ref.source)"
+            if let fs = parseVolumeSpec("\(host):\(target):ro", project: project, basePath: filePath) {
+                mounts.append(fs)
+            }
+        }
+        return mounts
     }
 
     /// Replace the source of named-volume mounts with the volume's host path.

@@ -24,6 +24,7 @@ public enum ComposeParseError: Error, LocalizedError, Equatable {
     case unknownVolume(String, String)
     case unknownSecret(String, String)
     case unknownConfig(String, String)
+    case configWithoutFile(String, String)
     case circularDependency([String])
     case interpolationError(String, String)
 
@@ -45,6 +46,8 @@ public enum ComposeParseError: Error, LocalizedError, Equatable {
             return "compose: service '\(service)' references undefined secret '\(secret)'"
         case .unknownConfig(let service, let config):
             return "compose: service '\(service)' references undefined config '\(config)'"
+        case .configWithoutFile(let service, let name):
+            return "compose: service '\(service)' uses '\(name)', which has no file: (only file-backed configs and secrets are supported)"
         case .circularDependency(let chain):
             return "compose: circular dependency: \(chain.joined(separator: " -> "))"
         case .interpolationError(let variable, let message):
@@ -131,11 +134,11 @@ public struct ComposeParser: Sendable {
             for volume in namedVolumes(in: service.volumes) where project.volumes[volume] == nil {
                 throw ComposeParseError.unknownVolume(name, volume)
             }
-            for secret in service.secrets where project.secrets[secret] == nil {
-                throw ComposeParseError.unknownSecret(name, secret)
+            for secret in service.secrets where project.secrets[secret.source] == nil {
+                throw ComposeParseError.unknownSecret(name, secret.source)
             }
-            for config in service.configs where project.configs[config] == nil {
-                throw ComposeParseError.unknownConfig(name, config)
+            for config in service.configs where project.configs[config.source] == nil {
+                throw ComposeParseError.unknownConfig(name, config.source)
             }
         }
         _ = try ServiceResolver.resolve(project)

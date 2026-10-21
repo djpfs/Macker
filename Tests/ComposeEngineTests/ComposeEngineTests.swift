@@ -45,8 +45,8 @@ final class ComposeEngineTests: XCTestCase {
         let project = try ComposeParser().parse(yaml: yaml, profiles: ["frontend"])
         XCTAssertEqual(project.services.count, 1)
         XCTAssertNotNil(project.services["web"])
-        XCTAssertEqual(project.services["web"]?.secrets, ["db_password"])
-        XCTAssertEqual(project.services["web"]?.configs, ["app_config"])
+        XCTAssertEqual(project.services["web"]?.secrets.map(\.source), ["db_password"])
+        XCTAssertEqual(project.services["web"]?.configs.map(\.source), ["app_config"])
 
         let missingSecretYAML = """
         services:
