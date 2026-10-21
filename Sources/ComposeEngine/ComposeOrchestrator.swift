@@ -1264,6 +1264,23 @@ public struct ComposeOrchestrator: Sendable {
         }
     }
 
+    /// Runs `work` and returns its result, or nil if it has not finished within
+    /// `seconds`. The work is not cancelled: a hung check may keep running in the
+    /// background, but the caller is released at the deadline.
+    static func runWithTimeout(_ seconds: Double, _ work: @escaping @Sendable () async throws -> Int32) async -> Int32? {
+        await withCheckedContinuation { continuation in
+            let once = OnceFlag()
+            Task {
+                let code = try? await work()
+                if once.claim() { continuation.resume(returning: code) }
+            }
+            Task {
+                try? await Task.sleep(for: .seconds(seconds))
+                if once.claim() { continuation.resume(returning: nil) }
+            }
+        }
+    }
+
     /// Poll a container's healthcheck until it passes or the retries are
     /// exhausted.
     private func waitUntilHealthy(containerId: String, healthcheck: HealthCheckConfig) async throws {
@@ -1277,8 +1294,12 @@ public struct ComposeOrchestrator: Sendable {
             try await Task.sleep(for: .seconds(startPeriod))
         }
 
+        let timeout = Self.parseDuration(healthcheck.timeout) ?? 30
         for attempt in 0..<retries {
-            let exitCode = try? await runHealthcheck(containerId: containerId, healthcheck: healthcheck)
+            // A check that runs past its timeout counts as a failed attempt.
+            let exitCode = await Self.runWithTimeout(timeout) {
+                try await self.runHealthcheck(containerId: containerId, healthcheck: healthcheck)
+            }
             if exitCode == 0 {
                 return
             }
@@ -1339,5 +1360,20 @@ public struct ComposeOrchestrator: Sendable {
             total += n
         }
         return total
+    }
+}
+
+/// Lets exactly one of two racing continuations resume.
+private final class OnceFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var fired = false
+
+    /// Returns true only for the first caller.
+    func claim() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if fired { return false }
+        fired = true
+        return true
     }
 }
