@@ -726,7 +726,10 @@ final class AppState {
             do {
                 try await service.daemon.start(environment: [StorageLocation.environmentName: result.newRoot.path])
             } catch {
+                // Back to the original: put it back, drop the unused copy, and
+                // start the daemon on the original location.
                 try? location.restoreBackup()
+                try? FileManager.default.removeItem(at: result.newRoot)
                 try? await service.daemon.start()
                 throw error
             }
