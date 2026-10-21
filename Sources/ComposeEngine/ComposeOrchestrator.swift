@@ -87,9 +87,14 @@ public struct ComposeOrchestrator: Sendable {
         return "\(sanitize(project))-\(sanitize(service))-\(replica)"
     }
 
-    /// How many replicas a service runs: the `--scale` value when given, else `scale:`, else 1.
+    /// How many replicas a service runs. The `--scale` value wins, then a
+    /// non-default `scale:`, then `deploy.replicas`, then 1.
     public static func replicaCount(for serviceName: String, in project: ComposeProject, scales: [String: Int]) -> Int {
-        max(1, scales[serviceName] ?? project.services[serviceName]?.scale ?? 1)
+        let service = project.services[serviceName]
+        if let scaled = scales[serviceName] { return max(1, scaled) }
+        if let scale = service?.scale, scale != 1 { return max(1, scale) }
+        if let replicas = service?.deploy?.replicas { return max(1, replicas) }
+        return 1
     }
 
     /// The image reference for a service: its `image:` when present, otherwise

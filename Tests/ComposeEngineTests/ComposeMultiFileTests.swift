@@ -94,3 +94,29 @@ final class ComposeReplicaTests: XCTestCase {
         XCTAssertEqual(ComposeOrchestrator.replicaCount(for: "db", in: project, scales: ["db": 0]), 1)
     }
 }
+
+final class ComposeDeployReplicasTests: XCTestCase {
+    func testDeployReplicasUsedWhenScaleIsDefault() throws {
+        let project = try ComposeParser().parse(yaml: """
+        services:
+          web:
+            image: nginx
+            deploy:
+              replicas: 3
+        """)
+        XCTAssertEqual(ComposeOrchestrator.replicaCount(for: "web", in: project, scales: [:]), 3)
+        XCTAssertEqual(ComposeOrchestrator.replicaCount(for: "web", in: project, scales: ["web": 2]), 2)
+    }
+
+    func testExplicitScaleBeatsDeployReplicas() throws {
+        let project = try ComposeParser().parse(yaml: """
+        services:
+          web:
+            image: nginx
+            scale: 4
+            deploy:
+              replicas: 3
+        """)
+        XCTAssertEqual(ComposeOrchestrator.replicaCount(for: "web", in: project, scales: [:]), 4)
+    }
+}
