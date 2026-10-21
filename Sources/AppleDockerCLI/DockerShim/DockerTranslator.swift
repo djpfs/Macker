@@ -78,6 +78,8 @@ public struct DockerTranslator: Sendable {
             try await prune(command)
         case "tag":
             try await tag(command)
+        case "commit":
+            try await commit(command)
         case "push":
             try await push(command)
         case "load":
@@ -330,7 +332,7 @@ public struct DockerTranslator: Sendable {
             labels: ["com.macker.shim": "true"],
             networks: [AttachmentConfiguration(
                 network: ContainerAPIClient.defaultNetworkName,
-                options: AttachmentOptions(hostname: name, mtu: 1280)
+                options: AttachmentOptions(hostname: name, mtu: 1280, aliases: Self.networkAliases(command, flag: "network-alias"))
             )],
             resources: .init()
         )
@@ -448,6 +450,31 @@ public struct DockerTranslator: Sendable {
         try await runCLI(["image", "tag", command.arguments[0], command.arguments[1]])
     }
 
+    /// `docker commit CONTAINER REPOSITORY[:TAG]`. `container commit` takes the
+    /// same two arguments but has no equivalent of -a, -c or -m, so those are refused.
+    private func commit(_ command: DockerCommand) async throws {
+        guard let containerID = command.arguments.first else {
+            throw DockerShimError.missingArgument("CONTAINER")
+        }
+        for flag in ["author", "a", "change", "c", "message", "m"] where command.value(flag) != nil {
+            throw DockerShimError.unsupportedCommand("commit --\(flag)")
+        }
+        guard command.arguments.count >= 2 else {
+            throw DockerShimError.missingArgument("REPOSITORY[:TAG]")
+        }
+        let resolved = try await resolveContainerID(containerID)
+        try await runCLI(["commit", resolved, command.arguments[1]])
+    }
+
+    /// `--network-alias` (run) or `--alias` (network connect) values. Comma-separated,
+    /// because the parser keeps a single value per flag.
+    private static func networkAliases(_ command: DockerCommand, flag: String) -> [String] {
+        (command.value(flag) ?? "")
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+    }
+
     /// `docker push` — push an image to a registry.
     private func push(_ command: DockerCommand) async throws {
         guard let ref = command.arguments.first else {
@@ -502,7 +529,7 @@ public struct DockerTranslator: Sendable {
         if !already {
             config.networks.append(AttachmentConfiguration(
                 network: network,
-                options: AttachmentOptions(hostname: config.id, mtu: 1280)
+                options: AttachmentOptions(hostname: config.id, mtu: 1280, aliases: Self.networkAliases(command, flag: "alias"))
             ))
         }
         try await recreateContainer(id: resolved, configuration: config)

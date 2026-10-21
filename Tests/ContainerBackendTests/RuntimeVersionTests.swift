@@ -75,3 +75,24 @@ final class LaunchdStatusParsingTests: XCTestCase {
         XCTAssertEqual(LaunchdManager.parseStatus("", fallback: ""), .unknown("unreadable system status output"))
     }
 }
+
+final class AttachmentAliasCodingTests: XCTestCase {
+    func testAliasesOmittedFromJSONWhenEmpty() throws {
+        let data = try JSONEncoder().encode(AttachmentOptions(hostname: "web", mtu: 1280))
+        let json = String(decoding: data, as: UTF8.self)
+        XCTAssertFalse(json.contains("aliases"))
+    }
+
+    func testAliasesRoundTrip() throws {
+        let original = AttachmentOptions(hostname: "web", mtu: 1280, aliases: ["api", "web-api"])
+        let decoded = try JSONDecoder().decode(AttachmentOptions.self, from: JSONEncoder().encode(original))
+        XCTAssertEqual(decoded.aliases, ["api", "web-api"])
+        XCTAssertEqual(decoded.hostname, "web")
+    }
+
+    func testLegacyConfigWithoutAliasesDecodes() throws {
+        let legacy = #"{"hostname":"web","mtu":1280}"#
+        let decoded = try JSONDecoder().decode(AttachmentOptions.self, from: Data(legacy.utf8))
+        XCTAssertEqual(decoded.aliases, [])
+    }
+}
