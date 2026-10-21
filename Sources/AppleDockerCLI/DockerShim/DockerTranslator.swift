@@ -490,6 +490,51 @@ public struct DockerTranslator: Sendable {
         try await runCLI(args)
     }
 
+    /// Compose files, in order: every `-f`, else `COMPOSE_FILE` (colon-separated),
+    /// else the standard file names in the current directory, plus its override.
+    static func composeFiles(_ command: DockerCommand) -> [String] {
+        let explicit = command.values("f") + command.values("file")
+        if !explicit.isEmpty { return explicit }
+        if let fromEnv = ProcessInfo.processInfo.environment["COMPOSE_FILE"], !fromEnv.isEmpty {
+            return fromEnv.split(separator: ":").map(String.init)
+        }
+        let fm = FileManager.default
+        let base = ["compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"]
+            .first { fm.fileExists(atPath: $0) } ?? "docker-compose.yml"
+        var files = [base]
+        let overrides = ["compose.override.yaml", "compose.override.yml",
+                         "docker-compose.override.yaml", "docker-compose.override.yml"]
+        if let override = overrides.first(where: { fm.fileExists(atPath: $0) }) {
+            files.append(override)
+        }
+        return files
+    }
+
+    /// `--scale SERVICE=N` (repeatable) for `compose up`.
+    static func composeScales(_ command: DockerCommand) throws -> [String: Int] {
+        var scales: [String: Int] = [:]
+        for value in command.values("scale") {
+            let parts = value.split(separator: "=", maxSplits: 1).map(String.init)
+            guard parts.count == 2, let count = Int(parts[1]), count >= 0 else {
+                throw DockerShimError.missingArgument("--scale SERVICE=NUM (got \(value))")
+            }
+            scales[parts[0]] = count
+        }
+        return scales
+    }
+
+    /// Active profiles: every `--profile`, plus `COMPOSE_PROFILES` (comma-separated).
+    static func composeProfiles(_ command: DockerCommand) -> Set<String> {
+        func names(_ value: String) -> [String] {
+            value.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        }
+        var active = Set(command.values("profile").flatMap(names))
+        if let fromEnv = ProcessInfo.processInfo.environment["COMPOSE_PROFILES"] {
+            active.formUnion(names(fromEnv))
+        }
+        return active
+    }
+
     /// `docker login SERVER -u USER`. The password comes from stdin with
     /// `--password-stdin`, or from a hidden prompt. It is never passed as an argument.
     private func login(_ command: DockerCommand) async throws {
@@ -534,51 +579,6 @@ public struct DockerTranslator: Sendable {
             FileHandle.standardError.write(Data("\n".utf8))
         }
         return readLine(strippingNewline: true) ?? ""
-    }
-
-    /// Compose files, in order: every `-f`, else `COMPOSE_FILE` (colon-separated),
-    /// else the standard file names in the current directory, plus its override.
-    static func composeFiles(_ command: DockerCommand) -> [String] {
-        let explicit = command.values("f") + command.values("file")
-        if !explicit.isEmpty { return explicit }
-        if let fromEnv = ProcessInfo.processInfo.environment["COMPOSE_FILE"], !fromEnv.isEmpty {
-            return fromEnv.split(separator: ":").map(String.init)
-        }
-        let fm = FileManager.default
-        let base = ["compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"]
-            .first { fm.fileExists(atPath: $0) } ?? "docker-compose.yml"
-        var files = [base]
-        let overrides = ["compose.override.yaml", "compose.override.yml",
-                         "docker-compose.override.yaml", "docker-compose.override.yml"]
-        if let override = overrides.first(where: { fm.fileExists(atPath: $0) }) {
-            files.append(override)
-        }
-        return files
-    }
-
-    /// `--scale SERVICE=N` (repeatable) for `compose up`.
-    static func composeScales(_ command: DockerCommand) throws -> [String: Int] {
-        var scales: [String: Int] = [:]
-        for value in command.values("scale") {
-            let parts = value.split(separator: "=", maxSplits: 1).map(String.init)
-            guard parts.count == 2, let count = Int(parts[1]), count >= 0 else {
-                throw DockerShimError.missingArgument("--scale SERVICE=NUM (got \(value))")
-            }
-            scales[parts[0]] = count
-        }
-        return scales
-    }
-
-    /// Active profiles: every `--profile`, plus `COMPOSE_PROFILES` (comma-separated).
-    static func composeProfiles(_ command: DockerCommand) -> Set<String> {
-        func names(_ value: String) -> [String] {
-            value.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-        }
-        var active = Set(command.values("profile").flatMap(names))
-        if let fromEnv = ProcessInfo.processInfo.environment["COMPOSE_PROFILES"] {
-            active.formUnion(names(fromEnv))
-        }
-        return active
     }
 
     /// `docker prune` — remove all stopped containers.
@@ -1269,10 +1269,12 @@ public struct DockerTranslator: Sendable {
             try await orchestrator.down(project: project, removeVolumes: removeVolumes)
         case "ps":
             let containers = try await orchestrator.ps(project: project)
+            let health = await orchestrator.healthStatus(project: project)
             print("NAME   SERVICE   STATUS")
             for container in containers {
                 let serviceName = container.configuration.labels[ComposeOrchestrator.ComposeLabel.service] ?? "-"
-                print("\(container.id)   \(serviceName)   \(container.status.rawValue)")
+                let state = health[container.id].map { "\(container.status.rawValue) (\($0))" } ?? container.status.rawValue
+                print("\(container.id)   \(serviceName)   \(state)")
             }
         case "logs":
             let follow = command.has("f") || command.has("follow")

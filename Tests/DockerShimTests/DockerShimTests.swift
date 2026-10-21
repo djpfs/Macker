@@ -140,6 +140,18 @@ final class DockerShimTests: XCTestCase {
     }
 }
 
+final class ComposeScaleFlagTests: XCTestCase {
+    func testScaleFlagsParseIntoCounts() throws {
+        let cmd = try DockerCommandParser.parse(["compose", "up", "-d", "--scale", "web=3", "--scale", "worker=0"])
+        XCTAssertEqual(try DockerTranslator.composeScales(cmd), ["web": 3, "worker": 0])
+    }
+
+    func testScaleFlagRejectsBadValue() throws {
+        let cmd = try DockerCommandParser.parse(["compose", "up", "--scale", "web"])
+        XCTAssertThrowsError(try DockerTranslator.composeScales(cmd))
+    }
+}
+
 final class RegistryAndBuildParsingTests: XCTestCase {
     func testBuildTagAndTargetAreValues() throws {
         let cmd = try DockerCommandParser.parse(["build", "-t", "app:1", "--target", "prod", "."])
@@ -166,17 +178,5 @@ final class RegistryAndBuildParsingTests: XCTestCase {
         XCTAssertEqual(cmd.value(short: "u", long: "username"), "ana")
         XCTAssertTrue(cmd.has("password-stdin"))
         XCTAssertEqual(cmd.arguments, ["ghcr.io"])
-    }
-}
-
-final class ComposeScaleFlagTests: XCTestCase {
-    func testScaleFlagsParseIntoCounts() throws {
-        let cmd = try DockerCommandParser.parse(["compose", "up", "-d", "--scale", "web=3", "--scale", "worker=0"])
-        XCTAssertEqual(try DockerTranslator.composeScales(cmd), ["web": 3, "worker": 0])
-    }
-
-    func testScaleFlagRejectsBadValue() throws {
-        let cmd = try DockerCommandParser.parse(["compose", "up", "--scale", "web"])
-        XCTAssertThrowsError(try DockerTranslator.composeScales(cmd))
     }
 }

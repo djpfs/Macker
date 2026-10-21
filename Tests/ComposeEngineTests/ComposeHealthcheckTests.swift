@@ -42,3 +42,20 @@ final class ComposeHealthcheckTests: XCTestCase {
         XCTAssertEqual(hc?.isDisabled, true)
     }
 }
+
+final class ComposeHealthcheckTimeoutTests: XCTestCase {
+    func testFastCheckReturnsItsExitCode() async {
+        let code = await ComposeOrchestrator.runWithTimeout(2) { 0 }
+        XCTAssertEqual(code, 0)
+    }
+
+    func testSlowCheckIsReleasedAtTheDeadline() async {
+        let start = Date()
+        let code = await ComposeOrchestrator.runWithTimeout(0.2) {
+            try await Task.sleep(for: .seconds(5))
+            return 0
+        }
+        XCTAssertNil(code)
+        XCTAssertLessThan(Date().timeIntervalSince(start), 3)
+    }
+}

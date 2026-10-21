@@ -59,3 +59,35 @@ final class ComposeConfigSecretTests: XCTestCase {
         XCTAssertEqual(mounts.count, 1)
     }
 }
+
+final class ComposeInlineContentTests: XCTestCase {
+    func testInlineContentIsDecoded() throws {
+        let project = try ComposeParser().parse(yaml: """
+        configs:
+          motd:
+            content: "hello from compose"
+        secrets:
+          token:
+            content: "s3cret"
+        services:
+          web:
+            image: nginx
+            configs: [motd]
+            secrets: [token]
+        """)
+        XCTAssertEqual(project.configs["motd"]?.content, "hello from compose")
+        XCTAssertEqual(project.secrets["token"]?.content, "s3cret")
+    }
+
+    func testInlineSecretIsWrittenWithOwnerOnlyPermissions() throws {
+        let files = try ComposeOrchestrator.referenceFiles(
+            ["token": (file: nil, content: "s3cret")],
+            kind: "secrets",
+            project: "shop-test-\(UUID().uuidString)"
+        )
+        let path = try XCTUnwrap(files["token"])
+        XCTAssertEqual(try String(contentsOfFile: path, encoding: .utf8), "s3cret")
+        let mode = try FileManager.default.attributesOfItem(atPath: path)[.posixPermissions] as? NSNumber
+        XCTAssertEqual(mode?.intValue, 0o600)
+    }
+}
