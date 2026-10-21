@@ -68,3 +68,29 @@ final class ComposeMultiFileTests: XCTestCase {
         XCTAssertEqual(project.services["web"]?.image, "nginx:2")
     }
 }
+
+final class ComposeReplicaTests: XCTestCase {
+    func testReplicaNamesAndCustomNameOnReplicaOne() {
+        XCTAssertEqual(ComposeOrchestrator.replicaName(project: "shop", service: "web", replica: 1), "shop-web-1")
+        XCTAssertEqual(ComposeOrchestrator.replicaName(project: "shop", service: "web", replica: 3), "shop-web-3")
+
+        var custom = ServiceConfig(image: "nginx")
+        custom.containerName = "frontend"
+        XCTAssertEqual(ComposeOrchestrator.replicaName(project: "shop", service: "web", config: custom, replica: 1), "frontend")
+    }
+
+    func testReplicaCountPrefersScaleOverride() throws {
+        let project = try ComposeParser().parse(yaml: """
+        services:
+          web:
+            image: nginx
+            scale: 2
+          db:
+            image: postgres
+        """)
+        XCTAssertEqual(ComposeOrchestrator.replicaCount(for: "web", in: project, scales: [:]), 2)
+        XCTAssertEqual(ComposeOrchestrator.replicaCount(for: "web", in: project, scales: ["web": 4]), 4)
+        XCTAssertEqual(ComposeOrchestrator.replicaCount(for: "db", in: project, scales: [:]), 1)
+        XCTAssertEqual(ComposeOrchestrator.replicaCount(for: "db", in: project, scales: ["db": 0]), 1)
+    }
+}
