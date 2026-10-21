@@ -134,7 +134,7 @@ private struct SingleTerminalView: View {
                     }
                     .padding(8)
                 }
-                .background(Color(nsColor: .textBackgroundColor))
+                .contentBackground()
                 .onChange(of: session.output.count) {
                     if let last = session.output.indices.last {
                         proxy.scrollTo(last, anchor: .bottom)

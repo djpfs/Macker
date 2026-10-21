@@ -9,6 +9,7 @@ import ContainerBackend
 /// App settings: polling cadence, CLI path, runtime info, and storage cleanup.
 struct SettingsView: View {
     @Environment(AppState.self) private var state
+    @AppStorage("appTheme") private var appTheme = AppTheme.system
     @AppStorage("pollInterval") private var pollInterval = 4.0
     @AppStorage("showMenuBar") private var showMenuBar = true
     @AppStorage("menuBarConfig") private var menuBarConfig = MenuBarConfig()
@@ -39,6 +40,14 @@ struct SettingsView: View {
     private var general: some View {
         ScrollView {
             Form {
+            Section("Appearance") {
+                Picker("Theme", selection: $appTheme) {
+                    ForEach(AppTheme.allCases) { theme in
+                        Text(theme.title).tag(theme)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
             Section("Polling") {
                 HStack {
                     Text("Refresh interval")

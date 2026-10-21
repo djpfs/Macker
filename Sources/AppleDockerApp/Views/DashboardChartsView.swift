@@ -221,10 +221,10 @@ private struct MetricChart: View {
                 }
             }
             .frame(height: 90)
-            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+            .surfaceBackground(cornerRadius: 8)
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(Color(nsColor: .separatorColor).opacity(0.5))
+                    .strokeBorder(Color.primary.opacity(0.12))
             )
 
             if let last = series.first?.values.last {

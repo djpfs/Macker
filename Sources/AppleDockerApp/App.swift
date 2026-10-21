@@ -51,6 +51,7 @@ public struct AppleDockerApp: App {
         Window("Macker", id: "main") {
             RootView()
                 .environment(state)
+                .appThemed()
                 .frame(minWidth: 1000, minHeight: 640)
                 .task { state.startPolling() }
                 .onDisappear { state.stopPolling() }
@@ -66,6 +67,7 @@ public struct AppleDockerApp: App {
         MenuBarExtra("Macker", systemImage: "shippingbox") {
             MenuBarView()
                 .environment(state)
+                .appThemed()
         }
         .menuBarExtraStyle(.window)
     }
@@ -102,6 +104,7 @@ private struct RootView: View {
                 sidebarRow(item)
                     .tag(item)
             }
+            .navigationTitle("Macker")            .listStyle(.sidebar)
             .navigationTitle("Macker")
             .navigationSplitViewColumnWidth(min: 240, ideal: 260, max: 360)
             .safeAreaInset(edge: .bottom) {

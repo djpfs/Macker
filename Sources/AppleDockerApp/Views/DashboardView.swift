@@ -129,10 +129,10 @@ struct ResourceCard: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
+        .surfaceBackground(cornerRadius: 12)
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(Color(nsColor: .separatorColor).opacity(0.5))
+                .strokeBorder(Color.primary.opacity(0.12))
         )
     }
 }
