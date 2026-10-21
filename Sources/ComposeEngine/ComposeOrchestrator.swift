@@ -759,11 +759,15 @@ public struct ComposeOrchestrator: Sendable {
         // Configs (under /) and secrets (under /run/secrets) with a file: source,
         // mounted read-only at their target.
         mounts += try Self.fileRefMounts(
-            service.configs, files: project.configs.compactMapValues(\.file), defaultDirectory: "",
+            service.configs,
+            files: try Self.referenceFiles(project.configs.mapValues { ($0.file, $0.content) }, kind: "configs", project: project.name),
+            defaultDirectory: "",
             serviceName: serviceName, project: project, filePath: filePath
         )
         mounts += try Self.fileRefMounts(
-            service.secrets, files: project.secrets.compactMapValues(\.file), defaultDirectory: "/run/secrets",
+            service.secrets,
+            files: try Self.referenceFiles(project.secrets.mapValues { ($0.file, $0.content) }, kind: "secrets", project: project.name),
+            defaultDirectory: "/run/secrets",
             serviceName: serviceName, project: project, filePath: filePath
         )
 
@@ -927,6 +931,38 @@ public struct ComposeOrchestrator: Sendable {
             )
             _ = try await service.createNetwork(configuration: configuration)
         }
+    }
+
+    /// Host file for each config or secret: its `file:` as given, or inline
+    /// `content:` written under Macker's state directory (mode 0600 for secrets).
+    static func referenceFiles(
+        _ definitions: [String: (file: String?, content: String?)],
+        kind: String,
+        project: String
+    ) throws -> [String: String] {
+        var files: [String: String] = [:]
+        for (name, definition) in definitions {
+            if let file = definition.file {
+                files[name] = file
+            } else if let content = definition.content {
+                let directory = inlineStateDirectory()
+                    .appendingPathComponent(sanitize(project), isDirectory: true)
+                    .appendingPathComponent(kind, isDirectory: true)
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                let url = directory.appendingPathComponent(sanitize(name))
+                try Data(content.utf8).write(to: url, options: .atomic)
+                try FileManager.default.setAttributes(
+                    [.posixPermissions: kind == "secrets" ? 0o600 : 0o644], ofItemAtPath: url.path
+                )
+                files[name] = url.path
+            }
+        }
+        return files
+    }
+
+    private static func inlineStateDirectory() -> URL {
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return support.appendingPathComponent("Macker/compose-inline", isDirectory: true)
     }
 
     /// Read-only bind mounts for configs or secrets. The target is the reference's
@@ -1300,9 +1336,46 @@ public struct ComposeOrchestrator: Sendable {
         }
     }
 
+    /// Health of each running container that has an active healthcheck, keyed by
+    /// container ID: "healthy" or "unhealthy". Each check runs once per call.
+    public func healthStatus(project: ComposeProject) async -> [String: String] {
+        guard let containers = try? await projectContainers(project: project) else { return [:] }
+        var status: [String: String] = [:]
+        for container in containers where container.status == .running {
+            guard let serviceName = container.configuration.labels[ComposeLabel.service],
+                  let healthcheck = project.services[serviceName]?.healthcheck,
+                  !healthcheck.isDisabled else { continue }
+            let timeout = Self.parseDuration(healthcheck.timeout) ?? 30
+            let code = await Self.runWithTimeout(timeout) {
+                try await self.runHealthcheck(containerId: container.id, healthcheck: healthcheck)
+            }
+            status[container.id] = code == 0 ? "healthy" : "unhealthy"
+        }
+        return status
+    }
+
+    /// Runs `work` and returns its result, or nil if it has not finished within
+    /// `seconds`. The work is not cancelled: a hung check may keep running in the
+    /// background, but the caller is released at the deadline.
+    static func runWithTimeout(_ seconds: Double, _ work: @escaping @Sendable () async throws -> Int32) async -> Int32? {
+        await withCheckedContinuation { continuation in
+            let once = OnceFlag()
+            Task {
+                let code = try? await work()
+                if once.claim() { continuation.resume(returning: code) }
+            }
+            Task {
+                try? await Task.sleep(for: .seconds(seconds))
+                if once.claim() { continuation.resume(returning: nil) }
+            }
+        }
+    }
+
     /// Poll a container's healthcheck until it passes or the retries are
     /// exhausted.
     private func waitUntilHealthy(containerId: String, healthcheck: HealthCheckConfig) async throws {
+        // A disabled healthcheck has nothing to wait for.
+        guard !healthcheck.isDisabled else { return }
         let interval = Self.parseDuration(healthcheck.interval) ?? 5
         let retries = healthcheck.retries ?? 3
         let startPeriod = Self.parseDuration(healthcheck.startPeriod) ?? 0
@@ -1311,8 +1384,12 @@ public struct ComposeOrchestrator: Sendable {
             try await Task.sleep(for: .seconds(startPeriod))
         }
 
+        let timeout = Self.parseDuration(healthcheck.timeout) ?? 30
         for attempt in 0..<retries {
-            let exitCode = try? await runHealthcheck(containerId: containerId, healthcheck: healthcheck)
+            // A check that runs past its timeout counts as a failed attempt.
+            let exitCode = await Self.runWithTimeout(timeout) {
+                try await self.runHealthcheck(containerId: containerId, healthcheck: healthcheck)
+            }
             if exitCode == 0 {
                 return
             }
@@ -1373,5 +1450,20 @@ public struct ComposeOrchestrator: Sendable {
             total += n
         }
         return total
+    }
+}
+
+/// Lets exactly one of two racing continuations resume.
+private final class OnceFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var fired = false
+
+    /// Returns true only for the first caller.
+    func claim() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if fired { return false }
+        fired = true
+        return true
     }
 }

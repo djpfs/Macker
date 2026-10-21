@@ -661,17 +661,21 @@ public struct VolumeConfig: Sendable, Codable, Equatable {
 /// A config definition.
 public struct ConfigConfig: Sendable, Codable, Equatable {
     public var file: String?
+    /// Inline content, written to a file by Macker before it is mounted.
+    public var content: String?
     public var external: Bool
     public var name: String?
 
-    public init(file: String? = nil, external: Bool = false, name: String? = nil) {
+    public init(file: String? = nil, content: String? = nil, external: Bool = false, name: String? = nil) {
         self.file = file
+        self.content = content
         self.external = external
         self.name = name
     }
 
     enum CodingKeys: String, CodingKey {
         case file
+        case content
         case external
         case name
     }
@@ -679,6 +683,7 @@ public struct ConfigConfig: Sendable, Codable, Equatable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         file = try c.decodeIfPresent(String.self, forKey: .file)
+        content = try c.decodeIfPresent(String.self, forKey: .content)
         if let externalBool = try? c.decodeIfPresent(Bool.self, forKey: .external) {
             external = externalBool
         } else {
@@ -691,17 +696,21 @@ public struct ConfigConfig: Sendable, Codable, Equatable {
 /// A secret definition.
 public struct SecretConfig: Sendable, Codable, Equatable {
     public var file: String?
+    /// Inline content, written to a file by Macker before it is mounted.
+    public var content: String?
     public var external: Bool
     public var name: String?
 
-    public init(file: String? = nil, external: Bool = false, name: String? = nil) {
+    public init(file: String? = nil, content: String? = nil, external: Bool = false, name: String? = nil) {
         self.file = file
+        self.content = content
         self.external = external
         self.name = name
     }
 
     enum CodingKeys: String, CodingKey {
         case file
+        case content
         case external
         case name
     }
@@ -709,6 +718,7 @@ public struct SecretConfig: Sendable, Codable, Equatable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         file = try c.decodeIfPresent(String.self, forKey: .file)
+        content = try c.decodeIfPresent(String.self, forKey: .content)
         if let externalBool = try? c.decodeIfPresent(Bool.self, forKey: .external) {
             external = externalBool
         } else {
@@ -768,13 +778,21 @@ public struct HealthCheckConfig: Sendable, Codable, Equatable {
     public var retries: Int?
     /// Grace period before starting checks.
     public var startPeriod: String?
+    /// `disable: true` turns the service's healthcheck off.
+    public var disable: Bool
 
-    public init(test: [String], interval: String? = nil, timeout: String? = nil, retries: Int? = nil, startPeriod: String? = nil) {
+    public init(test: [String], interval: String? = nil, timeout: String? = nil, retries: Int? = nil, startPeriod: String? = nil, disable: Bool = false) {
         self.test = test
         self.interval = interval
         self.timeout = timeout
         self.retries = retries
         self.startPeriod = startPeriod
+        self.disable = disable
+    }
+
+    /// True when the healthcheck must not run: `disable: true`, or a test of `NONE`.
+    public var isDisabled: Bool {
+        disable || test.first?.uppercased() == "NONE"
     }
 
     enum CodingKeys: String, CodingKey {
@@ -783,6 +801,7 @@ public struct HealthCheckConfig: Sendable, Codable, Equatable {
         case timeout
         case retries
         case startPeriod = "start_period"
+        case disable
     }
 
     public init(from decoder: Decoder) throws {
@@ -792,6 +811,7 @@ public struct HealthCheckConfig: Sendable, Codable, Equatable {
         timeout = try c.decodeIfPresent(String.self, forKey: .timeout)
         retries = try c.decodeIfPresent(Int.self, forKey: .retries)
         startPeriod = try c.decodeIfPresent(String.self, forKey: .startPeriod)
+        disable = try c.decodeIfPresent(Bool.self, forKey: .disable) ?? false
     }
 }
 
