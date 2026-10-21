@@ -47,6 +47,12 @@ public struct MigrateCommand: AsyncParsableCommand {
     @Flag(name: .long, help: "List the images that would be copied, without copying them.")
     var dryRun = false
 
+    @Flag(name: .long, help: "Also copy named volumes, with their contents.")
+    var volumes = false
+
+    @Option(name: .long, help: "Image used to read and write volume contents. It must contain tar.")
+    var helperImage = "alpine:latest"
+
     public init() {}
 
     public func run() async throws {
@@ -54,12 +60,17 @@ public struct MigrateCommand: AsyncParsableCommand {
             throw ValidationError("\(from.rawValue) does not appear to be running (no socket found).")
         }
         let images = try listImages(endpoint: endpoint)
-        if images.isEmpty {
-            print("No images to copy from \(from.rawValue).")
+        let volumeNames = volumes ? try listVolumes(endpoint: endpoint) : []
+        if images.isEmpty && volumeNames.isEmpty {
+            print("Nothing to copy from \(from.rawValue).")
             return
         }
         print("\(images.count) image(s) on \(from.rawValue):")
         for image in images { print("  \(image)") }
+        if volumes {
+            print("\(volumeNames.count) volume(s) on \(from.rawValue):")
+            for name in volumeNames { print("  \(name)") }
+        }
         if dryRun { return }
 
         let runner = ProcessRunner()
@@ -84,10 +95,49 @@ public struct MigrateCommand: AsyncParsableCommand {
             }
             try? FileManager.default.removeItem(atPath: archive)
         }
+        for name in volumeNames {
+            print("Copying volume \(name)...")
+            do {
+                try await copyVolume(name, endpoint: endpoint, workDir: workDir)
+                print("  done")
+            } catch {
+                print("  failed: \(error.localizedDescription)")
+                failed.append("volume:\(name)")
+            }
+        }
         if !failed.isEmpty {
             throw ExitCode(1)
         }
-        print("Copied \(images.count) image(s).")
+        print("Copied \(images.count) image(s)\(volumes ? " and \(volumeNames.count) volume(s)" : "").")
+    }
+
+    /// Reads a volume's contents with `tar` in the source daemon, then unpacks them
+    /// into a volume of the same name in Macker.
+    private func copyVolume(_ name: String, endpoint: String, workDir: URL) async throws {
+        let archive = workDir.appendingPathComponent(UUID().uuidString + ".tar")
+        defer { try? FileManager.default.removeItem(at: archive) }
+
+        let read = try DockerForwarder.capture(
+            ["-H", endpoint, "run", "--rm", "-v", "\(name):/src", helperImage, "tar", "-C", "/src", "-cf", "-", "."],
+            stdoutTo: archive
+        )
+        guard read.status == 0 else { throw MigrationError.volumeReadFailed(name, read.stderr) }
+
+        let runner = ProcessRunner()
+        _ = try? await runner.run(["volume", "create", name], timeout: .seconds(60))
+        let data = try Data(contentsOf: archive)
+        let write = try await runner.run(
+            ["run", "--rm", "-i", "-v", "\(name):/dst", helperImage, "tar", "-C", "/dst", "-xf", "-"],
+            standardInput: data,
+            timeout: .seconds(1800)
+        )
+        guard write.succeeded else { throw MigrationError.volumeWriteFailed(name, write.stderr) }
+    }
+
+    private func listVolumes(endpoint: String) throws -> [String] {
+        let result = try DockerForwarder.capture(["-H", endpoint, "volume", "ls", "--format", "{{.Name}}"])
+        guard result.status == 0 else { throw MigrationError.listFailed(result.stderr) }
+        return result.stdout.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
     }
 
     private func listImages(endpoint: String) throws -> [String] {
@@ -106,12 +156,16 @@ enum MigrationError: LocalizedError {
     case listFailed(String)
     case saveFailed(String, String)
     case loadFailed(String, String)
+    case volumeReadFailed(String, String)
+    case volumeWriteFailed(String, String)
 
     var errorDescription: String? {
         switch self {
         case .listFailed(let detail): "could not list images: \(detail.trimmingCharacters(in: .whitespacesAndNewlines))"
         case .saveFailed(let image, let detail): "could not save \(image): \(detail.trimmingCharacters(in: .whitespacesAndNewlines))"
         case .loadFailed(let image, let detail): "could not load \(image): \(detail.trimmingCharacters(in: .whitespacesAndNewlines))"
+        case .volumeReadFailed(let name, let detail): "could not read volume \(name): \(detail.trimmingCharacters(in: .whitespacesAndNewlines))"
+        case .volumeWriteFailed(let name, let detail): "could not write volume \(name): \(detail.trimmingCharacters(in: .whitespacesAndNewlines))"
         }
     }
 }

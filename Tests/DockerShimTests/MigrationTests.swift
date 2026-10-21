@@ -23,3 +23,17 @@ final class MigrationTests: XCTestCase {
         }
     }
 }
+
+final class MigrationVolumeArgumentTests: XCTestCase {
+    func testVolumesFlagAndHelperImage() throws {
+        let command = try MigrateCommand.parse(["--from", "orbstack", "--volumes", "--helper-image", "busybox:latest"])
+        XCTAssertTrue(command.volumes)
+        XCTAssertEqual(command.helperImage, "busybox:latest")
+    }
+
+    func testDefaultsLeaveVolumesOffWithAlpineHelper() throws {
+        let command = try MigrateCommand.parse(["--from", "colima"])
+        XCTAssertFalse(command.volumes)
+        XCTAssertEqual(command.helperImage, "alpine:latest")
+    }
+}
